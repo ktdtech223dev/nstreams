@@ -1,0 +1,11 @@
+node_modules/
+**/node_modules/
+dist/
+release/
+.env
+.env.local
+*.log
+.DS_Store
+Thumbs.db
+package-lock.json
+relay/package-lock.json

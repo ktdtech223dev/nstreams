@@ -1,0 +1,461 @@
+import React, { useEffect, useState } from 'react';
+import api from '../api';
+import { useApp } from '../App';
+import { useParty } from '../party/PartyContext';
+
+export default function Settings() {
+  const { users, activeUserId, switchUser, showToast, activeUser } = useApp();
+  const [tmdbKey, setTmdbKey] = useState('');
+  const [malClientId, setMalClientId] = useState('');
+  const [alClientId, setAlClientId] = useState('');
+  const [sync, setSync] = useState(null);
+  const [syncing, setSyncing] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      if (window.electron) {
+        setTmdbKey((await window.electron.getStore('tmdb_api_key')) || '');
+        setMalClientId((await window.electron.getStore('mal_client_id')) || '');
+        setAlClientId((await window.electron.getStore('anilist_client_id')) || '');
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (activeUserId) {
+      api.syncStatus(activeUserId).then(setSync).catch(() => {});
+    }
+  }, [activeUserId]);
+
+  async function saveKey(key, val) {
+    if (window.electron) {
+      await window.electron.setStore(key, val);
+      showToast('Saved ✓');
+    }
+  }
+
+  async function testTmdb() {
+    try {
+      await api.search('test');
+      showToast('TMDB OK ✓');
+    } catch (e) {
+      showToast('TMDB failed: ' + e.message);
+    }
+  }
+
+  async function connectMal() {
+    try {
+      const { url } = await api.malAuthUrl(activeUserId);
+      if (window.electron) await window.electron.openUrl(url);
+      else window.open(url, '_blank');
+    } catch (e) {
+      showToast('Failed: ' + e.message);
+    }
+  }
+
+  async function connectAnilist() {
+    try {
+      const { url } = await api.anilistAuthUrl();
+      if (window.electron) await window.electron.openUrl(url);
+      else window.open(url, '_blank');
+    } catch (e) {
+      showToast('Failed: ' + e.message);
+    }
+  }
+
+  async function syncNow(service) {
+    setSyncing(true);
+    try {
+      const r = service === 'mal'
+        ? await api.malSync(activeUserId)
+        : await api.anilistSync(activeUserId);
+      showToast(`Imported ${r.imported}, updated ${r.updated}`);
+      setSync(await api.syncStatus(activeUserId));
+    } catch (e) {
+      showToast('Sync failed: ' + e.message);
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  async function syncAll() {
+    setSyncing(true);
+    try {
+      if (sync?.mal?.connected) await api.malSync(activeUserId);
+      if (sync?.anilist?.connected) await api.anilistSync(activeUserId);
+      setSync(await api.syncStatus(activeUserId));
+      showToast('Synced all ✓');
+    } catch (e) {
+      showToast('Failed: ' + e.message);
+    } finally {
+      setSyncing(false);
+    }
+  }
+
+  return (
+    <div className="max-w-3xl space-y-8">
+      <header>
+        <h1 className="font-display text-5xl text-white tracking-wide">Settings</h1>
+      </header>
+
+      <Section title="Active User">
+        <p className="text-muted text-sm mb-4">Who are you on this machine?</p>
+        <div className="grid grid-cols-4 gap-3">
+          {users.map(u => (
+            <button
+              key={u.id}
+              onClick={() => switchUser(u.id)}
+              className={`p-4 rounded-xl border transition ${
+                activeUserId === u.id
+                  ? 'border-accent bg-accent/10 glow'
+                  : 'border-border bg-bg3 hover:bg-bg4'
+              }`}
+            >
+              <div
+                className="w-16 h-16 rounded-full mx-auto flex items-center justify-center text-2xl font-bold text-white"
+                style={{ background: u.avatar_color }}
+              >
+                {u.display_name[0]}
+              </div>
+              <div className="text-white font-medium mt-2">{u.display_name}</div>
+              <div className="text-xs text-muted">@{u.username}</div>
+            </button>
+          ))}
+        </div>
+      </Section>
+
+      <Section title="TMDB">
+        <label className="text-xs uppercase text-muted">API Key</label>
+        <div className="flex gap-2 mt-1">
+          <input
+            type="password"
+            value={tmdbKey}
+            onChange={e => setTmdbKey(e.target.value)}
+            placeholder="Your TMDB v3 API key"
+            className="input flex-1"
+          />
+          <button onClick={() => saveKey('tmdb_api_key', tmdbKey)} className="btn btn-primary">Save</button>
+          <button onClick={testTmdb} className="btn btn-ghost">Test</button>
+        </div>
+        <a
+          href="https://www.themoviedb.org/settings/api"
+          onClick={e => { e.preventDefault(); window.electron?.openUrl(e.currentTarget.href); }}
+          className="text-xs text-accent hover:underline mt-2 inline-block"
+        >
+          Get a free key at themoviedb.org →
+        </a>
+      </Section>
+
+      <Section title={`MyAnimeList — ${activeUser?.display_name}`}>
+        <label className="text-xs uppercase text-muted">Client ID</label>
+        <div className="flex gap-2 mt-1 mb-4">
+          <input
+            value={malClientId}
+            onChange={e => setMalClientId(e.target.value)}
+            placeholder="Your MAL app client ID"
+            className="input flex-1"
+          />
+          <button onClick={() => saveKey('mal_client_id', malClientId)} className="btn btn-primary">Save</button>
+        </div>
+        <a
+          href="https://myanimelist.net/apiconfig"
+          onClick={e => { e.preventDefault(); window.electron?.openUrl(e.currentTarget.href); }}
+          className="text-xs text-accent hover:underline block mb-4"
+        >
+          Get a free client ID at myanimelist.net/apiconfig →
+        </a>
+        {sync?.mal?.connected ? (
+          <div className="bg-bg3 p-4 rounded-lg">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="w-2 h-2 bg-green rounded-full" />
+              <span className="text-white">Connected as <b>{sync.mal.username}</b></span>
+            </div>
+            <div className="text-xs text-muted mb-3">
+              Last sync: {sync.mal.last_sync ? new Date(sync.mal.last_sync).toLocaleString() : 'never'}
+            </div>
+            <button onClick={() => syncNow('mal')} disabled={syncing} className="btn btn-primary">
+              {syncing ? 'Syncing...' : 'Sync Now'}
+            </button>
+          </div>
+        ) : (
+          <button onClick={connectMal} className="btn btn-primary">Connect MAL</button>
+        )}
+      </Section>
+
+      <Section title={`AniList — ${activeUser?.display_name}`}>
+        <label className="text-xs uppercase text-muted">Client ID</label>
+        <div className="flex gap-2 mt-1 mb-4">
+          <input
+            value={alClientId}
+            onChange={e => setAlClientId(e.target.value)}
+            placeholder="Your AniList app client ID"
+            className="input flex-1"
+          />
+          <button onClick={() => saveKey('anilist_client_id', alClientId)} className="btn btn-primary">Save</button>
+        </div>
+        <a
+          href="https://anilist.co/settings/developer"
+          onClick={e => { e.preventDefault(); window.electron?.openUrl(e.currentTarget.href); }}
+          className="text-xs text-accent hover:underline block mb-4"
+        >
+          Get a free client ID at anilist.co/settings/developer →
+        </a>
+        {sync?.anilist?.connected ? (
+          <div className="bg-bg3 p-4 rounded-lg">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="w-2 h-2 bg-green rounded-full" />
+              <span className="text-white">Connected</span>
+            </div>
+            <div className="text-xs text-muted mb-3">
+              Last sync: {sync.anilist.last_sync ? new Date(sync.anilist.last_sync).toLocaleString() : 'never'}
+            </div>
+            <button onClick={() => syncNow('anilist')} disabled={syncing} className="btn btn-primary">
+              {syncing ? 'Syncing...' : 'Sync Now'}
+            </button>
+          </div>
+        ) : (
+          <button onClick={connectAnilist} className="btn btn-primary">Connect AniList</button>
+        )}
+      </Section>
+
+      <WatchPartySection />
+
+      <LinkedAccountsSection />
+
+      <Section title="Sync Status">
+        {sync && (
+          <div className="space-y-2">
+            <StatusRow label="MAL" s={sync.mal} />
+            <StatusRow label="AniList" s={sync.anilist} />
+          </div>
+        )}
+        <button onClick={syncAll} disabled={syncing} className="btn btn-primary mt-4">
+          {syncing ? 'Syncing...' : 'Sync All Now'}
+        </button>
+      </Section>
+    </div>
+  );
+}
+
+function WatchPartySection() {
+  const { relayUrl, updateRelay, party, leaveParty } = useParty();
+  const { showToast, activeUser } = useApp();
+  const [draft, setDraft] = useState(relayUrl);
+  const [testing, setTesting] = useState(false);
+  const [status, setStatus] = useState(null);
+
+  useEffect(() => { setDraft(relayUrl); }, [relayUrl]);
+
+  async function save() {
+    await updateRelay(draft.trim());
+    showToast('Relay URL saved');
+  }
+
+  async function test() {
+    if (!draft) return;
+    setTesting(true);
+    setStatus(null);
+    try {
+      const res = await fetch(draft.trim().replace(/\/$/, '') + '/');
+      const j = await res.json();
+      if (j.ok) setStatus('✓ Relay reachable');
+      else setStatus('? Unexpected response');
+    } catch (e) {
+      setStatus(`✗ ${e.message}`);
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  return (
+    <Section title="Watch Party — Relay">
+      <p className="text-muted text-sm mb-4">
+        The relay is a tiny WebSocket server that shuttles chat, reactions and play/pause
+        events between everyone in a party. Deploy the <code className="text-accent">relay/</code> folder
+        to Railway, then paste its URL here.
+      </p>
+      <label className="text-xs uppercase text-muted">Relay URL</label>
+      <div className="flex gap-2 mt-1 mb-2">
+        <input
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          placeholder="https://nstreams-relay-production.up.railway.app"
+          className="input flex-1"
+        />
+        <button onClick={save} className="btn btn-primary">Save</button>
+        <button onClick={test} disabled={testing || !draft} className="btn btn-ghost">
+          {testing ? 'Testing…' : 'Test'}
+        </button>
+      </div>
+      {status && <div className="text-xs text-muted mb-3">{status}</div>}
+
+      {party ? (
+        <div className="bg-bg3 p-4 rounded-lg">
+          <div className="font-medium text-white mb-1">
+            Currently in party <span className="font-mono text-accent">{party.code}</span>
+          </div>
+          <div className="text-xs text-muted mb-3">
+            {party.content?.title || 'No title'} · {party.members?.length || 0} watching
+          </div>
+          <button onClick={leaveParty} className="btn btn-ghost text-sm">Leave party</button>
+        </div>
+      ) : (
+        <p className="text-xs text-muted">
+          No active party. Start one from any show's Watch Together button.
+        </p>
+      )}
+    </Section>
+  );
+}
+
+function LinkedAccountsSection() {
+  const { showToast } = useApp();
+  const [sites, setSites] = useState([]);
+  const [linked, setLinked] = useState({});
+  const [loading, setLoading] = useState(true);
+
+  async function load() {
+    setLoading(true);
+    try {
+      const all = await api.linkableSites();
+      setSites(all);
+      if (window.electron?.viewerLinkedDomains) {
+        const domains = all.map(s => {
+          try { return new URL(s.url).hostname.replace(/^www\./, ''); }
+          catch { return null; }
+        }).filter(Boolean);
+        const result = await window.electron.viewerLinkedDomains(domains);
+        setLinked(result);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function signIn(site) {
+    if (!window.electron?.watchInApp) {
+      showToast('In-app viewer only works inside the Electron app');
+      return;
+    }
+    await window.electron.watchInApp({
+      url: site.login_url,
+      title: `Sign in to ${site.name}`
+    });
+    showToast(`Opened ${site.name} — sign in and close the window when done`);
+    // Refresh linked state after a delay
+    setTimeout(load, 3000);
+  }
+
+  async function signOut(site) {
+    try {
+      const domain = new URL(site.url).hostname.replace(/^www\./, '');
+      const r = await window.electron.clearViewerDomain(domain);
+      showToast(`Cleared ${r.cleared} cookies for ${site.name}`);
+      load();
+    } catch (e) {
+      showToast('Failed: ' + e.message);
+    }
+  }
+
+  async function clearAll() {
+    if (!confirm('Sign out of ALL services inside N Streams viewer?')) return;
+    await window.electron.clearViewerSession();
+    showToast('Cleared all viewer data');
+    load();
+  }
+
+  const linkable = sites.filter(s => s.supported);
+
+  return (
+    <Section title="Linked Accounts (In-App Viewer)">
+      <p className="text-muted text-sm mb-4">
+        Sign in to a service once — N Streams remembers your login so you can click
+        "Watch in app" from any show and jump straight in. Cookies are stored in a
+        persistent session isolated from your system browser.
+      </p>
+      <div className="bg-gold/10 border border-gold/30 text-gold text-xs p-3 rounded-lg mb-4">
+        ⚠ Services that use Widevine DRM (Netflix, Hulu, Disney+, Max, Prime, etc.)
+        may not play video inside the embedded viewer without a signed Electron
+        build. Sign-in works; playback will fall back to "Open externally" if it fails.
+      </div>
+
+      {loading ? (
+        <div className="text-muted text-sm">Loading…</div>
+      ) : (
+        <div className="space-y-2">
+          {linkable.map(s => {
+            let domain = '';
+            try { domain = new URL(s.url).hostname.replace(/^www\./, ''); } catch {}
+            const isLinked = linked[domain];
+            return (
+              <div key={s.id} className="bg-bg3 border border-border rounded-lg p-3 flex items-center gap-3">
+                <img
+                  src={s.logo_url || `https://www.google.com/s2/favicons?domain=${domain}&sz=64`}
+                  className="w-8 h-8 rounded shrink-0"
+                  alt=""
+                />
+                <div className="flex-1 min-w-0">
+                  <div className="font-medium text-white flex items-center gap-2">
+                    {s.name}
+                    {s.requires_drm && (
+                      <span className="text-[10px] bg-gold/20 text-gold px-1.5 py-0.5 rounded">DRM</span>
+                    )}
+                    {isLinked && (
+                      <span className="text-[10px] bg-green/20 text-green px-1.5 py-0.5 rounded flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 bg-green rounded-full" />
+                        Signed in
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-xs text-muted truncate">{domain}</div>
+                </div>
+                {isLinked ? (
+                  <button onClick={() => signOut(s)} className="btn btn-ghost text-xs py-1.5">
+                    Sign out
+                  </button>
+                ) : (
+                  <button onClick={() => signIn(s)} className="btn btn-primary text-xs py-1.5">
+                    Sign in
+                  </button>
+                )}
+              </div>
+            );
+          })}
+          {linkable.length === 0 && (
+            <div className="text-muted text-sm">
+              No supported services in your catalog. Add one from the Sites page.
+            </div>
+          )}
+        </div>
+      )}
+      <button onClick={clearAll} className="btn btn-ghost text-sm mt-4">
+        Sign out of everything
+      </button>
+    </Section>
+  );
+}
+
+function Section({ title, children }) {
+  return (
+    <section className="bg-bg2 rounded-xl p-6 border border-border">
+      <h2 className="font-display text-2xl text-white mb-4 tracking-wide">{title}</h2>
+      {children}
+    </section>
+  );
+}
+
+function StatusRow({ label, s }) {
+  return (
+    <div className="flex items-center justify-between bg-bg3 px-4 py-2 rounded-lg">
+      <span className="text-white font-medium">{label}</span>
+      <div className="flex items-center gap-2">
+        <span className={`w-2 h-2 rounded-full ${s.connected ? 'bg-green' : 'bg-muted'}`} />
+        <span className="text-sm text-muted">
+          {s.connected ? (s.last_sync ? new Date(s.last_sync).toLocaleString() : 'connected') : 'Not connected'}
+        </span>
+      </div>
+    </div>
+  );
+}
