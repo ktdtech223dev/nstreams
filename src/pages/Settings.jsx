@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import api from '../api';
 import { useApp } from '../App';
-import { useParty } from '../party/PartyContext';
+import { useParty, DEFAULT_RELAY_URL } from '../party/PartyContext';
 
 export default function Settings() {
   const { users, activeUserId, switchUser, showToast, activeUser } = useApp();
@@ -267,14 +267,29 @@ function WatchPartySection() {
     }
   }
 
+  const isDefault = (draft || relayUrl) === DEFAULT_RELAY_URL;
+
+  async function resetToDefault() {
+    setDraft(DEFAULT_RELAY_URL);
+    await updateRelay(DEFAULT_RELAY_URL);
+    showToast('Reset to N Games crew relay');
+  }
+
   return (
     <Section title="Watch Party — Relay">
       <p className="text-muted text-sm mb-4">
-        The relay is a tiny WebSocket server that shuttles chat, reactions and play/pause
-        events between everyone in a party. Deploy the <code className="text-accent">relay/</code> folder
-        to Railway, then paste its URL here.
+        The relay shuttles chat, reactions and play/pause events between everyone in a party.
+        N Streams ships pre-configured with the N Games crew's relay — you don't need to do anything.
       </p>
-      <label className="text-xs uppercase text-muted">Relay URL</label>
+      <div className="flex items-center justify-between mb-1">
+        <label className="text-xs uppercase text-muted">Relay URL</label>
+        {isDefault && (
+          <span className="text-[10px] bg-accent/20 text-accent2 px-2 py-0.5 rounded-full flex items-center gap-1">
+            <span className="w-1.5 h-1.5 bg-green rounded-full" />
+            N Games crew default
+          </span>
+        )}
+      </div>
       <div className="flex gap-2 mt-1 mb-2">
         <input
           value={draft}
@@ -287,6 +302,11 @@ function WatchPartySection() {
           {testing ? 'Testing…' : 'Test'}
         </button>
       </div>
+      {!isDefault && (
+        <button onClick={resetToDefault} className="text-xs text-accent hover:underline mb-2">
+          ↺ Reset to N Games crew relay
+        </button>
+      )}
       {status && <div className="text-xs text-muted mb-3">{status}</div>}
 
       {party ? (

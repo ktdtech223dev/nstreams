@@ -178,9 +178,14 @@ ipcMain.handle('viewer-linked-domains', async (_, domains) => {
   return result;
 });
 
+// The crew's shared Watch Party relay — hardcoded default so the app
+// works out of the box. Users can still override in Settings.
+const DEFAULT_RELAY_URL = 'https://nstreams-production.up.railway.app';
+if (!store.get('relay_url')) store.set('relay_url', DEFAULT_RELAY_URL);
+
 // Wire party IPC
 party.registerIpc({
-  getRelayUrl: () => store.get('relay_url'),
+  getRelayUrl: () => store.get('relay_url') || DEFAULT_RELAY_URL,
   getViewerWindow: () => currentPartyViewer,
   getMainWindow: () => mainWindow
 });

@@ -3,6 +3,8 @@ import React, { createContext, useContext, useEffect, useState, useCallback } fr
 const PartyContext = createContext(null);
 export const useParty = () => useContext(PartyContext);
 
+export const DEFAULT_RELAY_URL = 'https://nstreams-production.up.railway.app';
+
 export function PartyProvider({ children, showToast }) {
   const [party, setParty] = useState(null);   // current party object
   const [members, setMembers] = useState([]);
@@ -12,13 +14,16 @@ export function PartyProvider({ children, showToast }) {
   const [systemLog, setSystemLog] = useState([]);
   const [relayUrl, setRelayUrl] = useState('');
 
-  // Load saved relay URL
+  // Load saved relay URL — falls back to the N Games crew's shared relay
   useEffect(() => {
     (async () => {
       if (!window.electron) return;
-      const url = (await window.electron.getStore('relay_url')) || '';
+      const saved = await window.electron.getStore('relay_url');
+      const url = saved || DEFAULT_RELAY_URL;
       setRelayUrl(url);
-      if (url) await window.electron.party.setRelay(url);
+      await window.electron.party.setRelay(url);
+      // If nothing was saved, persist the default so Settings shows it too
+      if (!saved) await window.electron.setStore('relay_url', url);
     })();
   }, []);
 
