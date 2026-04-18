@@ -40,13 +40,36 @@
   "build": {
     "appId": "com.ngames.nstreams",
     "productName": "N Streams",
+    "copyright": "© 2026 N Games Crew",
     "files": [
       "dist/**/*",
       "electron/**/*",
-      "public/**/*"
+      "public/**/*",
+      "package.json"
     ],
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "public"
+    },
+    "asar": true,
+    "asarUnpack": [
+      "**/node_modules/better-sqlite3/**/*"
+    ],
+    "protocols": [
+      {
+        "name": "N Streams",
+        "schemes": ["nstreams"]
+      }
+    ],
+    "win": {
+      "target": [
+        { "target": "portable", "arch": ["x64"] }
+      ],
+      "icon": "public/icon.png",
+      "artifactName": "N-Streams-${version}-portable.${ext}"
+    },
+    "portable": {
+      "artifactName": "N-Streams-${version}-portable.${ext}"
     }
   }
 }
