@@ -41,17 +41,42 @@ function getAuthUrl(userId) {
 
 async function exchangeCode(code, userId) {
   const verifier = store.get(`mal_verifier_${userId}`);
-  const res = await axios.post(
-    `${MAL_AUTH}/token`,
-    new URLSearchParams({
-      client_id: store.get('mal_client_id') || '',
-      grant_type: 'authorization_code',
-      code,
-      redirect_uri: 'nstreams://mal-callback',
-      code_verifier: verifier
-    }),
-    { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-  );
+  const clientId = store.get('mal_client_id');
+  const clientSecret = store.get('mal_client_secret');
+
+  if (!clientId) throw new Error('MAL_CLIENT_ID_MISSING');
+  if (!clientSecret) {
+    throw new Error(
+      'MAL_CLIENT_SECRET_MISSING: MAL requires your Client Secret for the token exchange. ' +
+      'Copy it from your MAL app page at myanimelist.net/apiconfig and paste into Settings.'
+    );
+  }
+  if (!verifier) {
+    throw new Error(
+      'MAL_VERIFIER_LOST: Auth session expired (did you restart the app mid-OAuth?). ' +
+      'Click Connect MAL again.'
+    );
+  }
+
+  let res;
+  try {
+    res = await axios.post(
+      `${MAL_AUTH}/token`,
+      new URLSearchParams({
+        client_id: String(clientId).trim(),
+        client_secret: String(clientSecret).trim(),
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: 'nstreams://mal-callback',
+        code_verifier: verifier
+      }),
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+    );
+  } catch (e) {
+    const body = e.response?.data;
+    const msg = body?.error_description || body?.message || body?.error || e.message;
+    throw new Error(`MAL token exchange failed (${e.response?.status || '?'}): ${msg}`);
+  }
 
   const db = getDB();
   db.prepare(`

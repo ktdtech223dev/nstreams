@@ -7,8 +7,10 @@ export default function Settings() {
   const { users, activeUserId, switchUser, showToast, activeUser } = useApp();
   const [tmdbKey, setTmdbKey] = useState('');
   const [malClientId, setMalClientId] = useState('');
+  const [malClientSecret, setMalClientSecret] = useState('');
   const [alClientId, setAlClientId] = useState('');
   const [malSaved, setMalSaved] = useState('');
+  const [malSecretSaved, setMalSecretSaved] = useState('');
   const [alSaved, setAlSaved] = useState('');
   const [sync, setSync] = useState(null);
   const [syncing, setSyncing] = useState(false);
@@ -19,6 +21,8 @@ export default function Settings() {
         setTmdbKey((await window.electron.getStore('tmdb_api_key')) || '');
         const mid = (await window.electron.getStore('mal_client_id')) || '';
         setMalClientId(mid); setMalSaved(mid);
+        const msec = (await window.electron.getStore('mal_client_secret')) || '';
+        setMalClientSecret(msec); setMalSecretSaved(msec);
         const aid = (await window.electron.getStore('anilist_client_id')) || '';
         setAlClientId(aid); setAlSaved(aid);
       }
@@ -35,6 +39,7 @@ export default function Settings() {
     if (window.electron) {
       await window.electron.setStore(key, val);
       if (key === 'mal_client_id') setMalSaved(val);
+      if (key === 'mal_client_secret') setMalSecretSaved(val);
       if (key === 'anilist_client_id') setAlSaved(val);
       showToast('Saved ✓');
     }
@@ -52,6 +57,10 @@ export default function Settings() {
   async function connectMal() {
     if (!malSaved || !malSaved.trim()) {
       showToast('Paste your MAL Client ID above and click Save first');
+      return;
+    }
+    if (!malSecretSaved || !malSecretSaved.trim()) {
+      showToast('MAL also requires a Client Secret. Save it above first.');
       return;
     }
     try {
@@ -169,8 +178,9 @@ export default function Settings() {
             className="text-accent hover:underline">myanimelist.net/apiconfig</a> → Create ID</div>
           <div>2. <b>App Type:</b> Web</div>
           <div>3. <b>App Redirect URL:</b> <code className="text-accent bg-bg4 px-1.5 py-0.5 rounded select-text">nstreams://mal-callback</code></div>
-          <div>4. Fill in the rest however (name "N Streams", description anything). Submit.</div>
-          <div>5. Copy the <b>Client ID</b> (not Client Secret) from the resulting app page and paste below.</div>
+          <div>4. <b>Homepage URL:</b> anything (e.g. <code className="text-accent bg-bg4 px-1 py-0.5 rounded">https://github.com/ktdtech223dev/nstreams</code>)</div>
+          <div>5. Fill the rest however (name "N Streams", description anything). Submit.</div>
+          <div className="text-gold">6. MAL requires <b>BOTH</b> Client ID and Client Secret — copy both from your app page.</div>
         </div>
 
         <label className="text-xs uppercase text-muted">Client ID</label>
@@ -185,9 +195,23 @@ export default function Settings() {
             {malSaved && malSaved === malClientId ? '✓ Saved' : 'Save'}
           </button>
         </div>
-        {!malSaved && (
+
+        <label className="text-xs uppercase text-muted">Client Secret</label>
+        <div className="flex gap-2 mt-1 mb-2">
+          <input
+            type="password"
+            value={malClientSecret}
+            onChange={e => setMalClientSecret(e.target.value)}
+            placeholder="Paste MAL Client Secret here"
+            className="input flex-1"
+          />
+          <button onClick={() => saveKey('mal_client_secret', malClientSecret)} className="btn btn-primary">
+            {malSecretSaved && malSecretSaved === malClientSecret ? '✓ Saved' : 'Save'}
+          </button>
+        </div>
+        {(!malSaved || !malSecretSaved) && (
           <div className="text-xs text-red mb-4">
-            ⚠ No Client ID saved — Connect MAL will not work.
+            ⚠ {!malSaved && 'Client ID'}{!malSaved && !malSecretSaved && ' + '}{!malSecretSaved && 'Client Secret'} not saved — Connect MAL will fail.
           </div>
         )}
 
@@ -207,7 +231,7 @@ export default function Settings() {
         ) : (
           <button
             onClick={connectMal}
-            disabled={!malSaved}
+            disabled={!malSaved || !malSecretSaved}
             className="btn btn-primary disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Connect MAL
