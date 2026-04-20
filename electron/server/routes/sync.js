@@ -3,7 +3,7 @@ const { shell } = require('electron');
 const { getDB } = require('../database');
 const mal = require('../mal');
 const anilist = require('../anilist');
-const { waitForCallback, MAL_REDIRECT, ANILIST_REDIRECT } = require('../oauth');
+const { waitForCallback, MAL_REDIRECT, ANILIST_REDIRECT } = require('../../oauth');
 
 const router = express.Router();
 

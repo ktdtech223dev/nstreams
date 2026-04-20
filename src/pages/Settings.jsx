@@ -321,12 +321,33 @@ function AboutSection() {
   const [info, setInfo] = useState(null);
   const [update, setUpdate] = useState(null);
   const [checking, setChecking] = useState(false);
+  const [installing, setInstalling] = useState(false);
+  const [progress, setProgress] = useState(null);
 
   useEffect(() => {
     if (window.electron?.getAppInfo) {
       window.electron.getAppInfo().then(setInfo);
     }
+    if (window.electron?.onUpdateProgress) {
+      return window.electron.onUpdateProgress((data) => {
+        setProgress(data);
+        if (data.event === 'installing') {
+          showToast('Restarting to install update…');
+        }
+      });
+    }
   }, []);
+
+  async function installNow() {
+    if (!update?.downloadUrl) return;
+    setInstalling(true);
+    try {
+      await window.electron.installUpdate({ downloadUrl: update.downloadUrl });
+    } catch (e) {
+      showToast('Install failed: ' + e.message);
+      setInstalling(false);
+    }
+  }
 
   async function check() {
     setChecking(true);
@@ -397,18 +418,41 @@ function AboutSection() {
                 Published {new Date(update.publishedAt).toLocaleDateString()}
               </div>
             </div>
-            <button onClick={downloadUpdate} className="btn btn-primary shrink-0">
-              ↓ Download Update
-            </button>
+            <div className="flex gap-2 shrink-0">
+              <button
+                onClick={installNow}
+                disabled={installing}
+                className="btn btn-primary disabled:opacity-60"
+              >
+                {installing
+                  ? (progress?.event === 'progress'
+                      ? `Downloading ${progress.percent || 0}%`
+                      : progress?.event === 'installing'
+                      ? 'Installing…'
+                      : 'Preparing…')
+                  : '⚡ Install Now'}
+              </button>
+              <button onClick={downloadUpdate} className="btn btn-ghost" title="Download manually instead">
+                ↓
+              </button>
+            </div>
           </div>
+          {installing && progress?.event === 'progress' && progress.total > 0 && (
+            <div className="h-1.5 bg-bg4 rounded-full overflow-hidden mt-2 mb-3">
+              <div
+                className="h-full bg-accent transition-all"
+                style={{ width: `${progress.percent || 0}%` }}
+              />
+            </div>
+          )}
           {update.notes && (
             <pre className="text-xs text-muted whitespace-pre-wrap max-h-40 overflow-y-auto bg-bg4 rounded p-2 mt-2">
               {update.notes}
             </pre>
           )}
           <div className="text-xs text-muted mt-3">
-            Download the new portable exe, close N Streams, replace the old one, and relaunch.
-            Your data and logins carry over automatically.
+            "Install Now" downloads, swaps the exe, and relaunches automatically.
+            Your data persists.
           </div>
         </div>
       )}

@@ -232,6 +232,95 @@ ipcMain.handle('open-user-data-folder', () => {
   shell.openPath(app.getPath('userData'));
 });
 
+// Download and install an update in-place.
+// Strategy for portable Windows exe:
+//   1. Download new exe next to current as "<name>.update.exe"
+//   2. Write a tiny .bat that waits for us to quit, swaps files, relaunches
+//   3. Spawn the batch detached, quit the app
+ipcMain.handle('install-update', async (_, { downloadUrl }) => {
+  if (!downloadUrl) throw new Error('No download URL provided');
+  if (process.platform !== 'win32') {
+    shell.openExternal(downloadUrl);
+    return { opened: true };
+  }
+
+  const fs = require('fs');
+  const { spawn } = require('child_process');
+  const exePath = process.execPath;
+  const dir = path.dirname(exePath);
+  const name = path.basename(exePath);
+  const updatePath = path.join(dir, `${name}.update.exe`);
+  const batPath = path.join(dir, 'nstreams-updater.bat');
+
+  // Send progress events to renderer
+  const send = (event, payload) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('update-progress', { event, ...payload });
+    }
+  };
+
+  // 1. Download
+  await new Promise((resolve, reject) => {
+    const follow = (url, redirects = 0) => {
+      if (redirects > 5) return reject(new Error('Too many redirects'));
+      const { get } = url.startsWith('https:') ? require('https') : require('http');
+      get(url, { headers: { 'User-Agent': `NStreams/${app.getVersion()}` } }, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          return follow(res.headers.location, redirects + 1);
+        }
+        if (res.statusCode !== 200) {
+          return reject(new Error(`Download failed: HTTP ${res.statusCode}`));
+        }
+        const total = parseInt(res.headers['content-length']) || 0;
+        let loaded = 0;
+        const out = fs.createWriteStream(updatePath);
+        res.on('data', (chunk) => {
+          loaded += chunk.length;
+          send('progress', { loaded, total, percent: total ? Math.round(loaded * 100 / total) : 0 });
+        });
+        res.pipe(out);
+        out.on('finish', () => out.close(resolve));
+        out.on('error', reject);
+      }).on('error', reject);
+    };
+    follow(downloadUrl);
+  });
+
+  send('downloaded', { path: updatePath });
+
+  // 2. Write updater batch
+  // "ping -n" gives us a sleep that works on all Windows versions.
+  // We keep the new exe's name the same as the current one so Desktop
+  // shortcuts stay valid.
+  const bat = `@echo off
+:: N Streams portable updater — auto-deletes itself.
+chcp 65001 >NUL
+ping -n 3 127.0.0.1 >NUL
+:retry
+del "${exePath}" 2>NUL
+if exist "${exePath}" (
+  ping -n 2 127.0.0.1 >NUL
+  goto retry
+)
+move /y "${updatePath}" "${exePath}" >NUL
+start "" "${exePath}"
+del "%~f0"
+`;
+  fs.writeFileSync(batPath, bat, 'utf8');
+
+  // 3. Spawn detached + quit
+  const child = spawn('cmd.exe', ['/c', batPath], {
+    detached: true, stdio: 'ignore', windowsHide: true
+  });
+  child.unref();
+
+  send('installing', {});
+
+  // Give the child a moment to start before we exit
+  setTimeout(() => app.quit(), 800);
+  return { ok: true };
+});
+
 // Clear saved cookies / login for the viewer partition
 ipcMain.handle('clear-viewer-session', async () => {
   const s = session.fromPartition('persist:nstreams-viewer');

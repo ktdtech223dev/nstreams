@@ -11,6 +11,12 @@ contextBridge.exposeInMainWorld('electron', {
   appVersion,
   getAppInfo: () => ipcRenderer.invoke('get-app-info'),
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+  installUpdate: (opts) => ipcRenderer.invoke('install-update', opts),
+  onUpdateProgress: (cb) => {
+    const h = (_, data) => cb(data);
+    ipcRenderer.on('update-progress', h);
+    return () => ipcRenderer.removeListener('update-progress', h);
+  },
   openUserDataFolder: () => ipcRenderer.invoke('open-user-data-folder'),
   openUrl: (url) => ipcRenderer.invoke('open-url', url),
   minimize: () => ipcRenderer.invoke('minimize'),
