@@ -14,6 +14,7 @@ export default function Settings() {
   const [alSaved, setAlSaved] = useState('');
   const [sync, setSync] = useState(null);
   const [syncing, setSyncing] = useState(false);
+  const [redirectUris, setRedirectUris] = useState({ mal: '', anilist: '' });
 
   useEffect(() => {
     (async () => {
@@ -33,7 +34,13 @@ export default function Settings() {
     if (activeUserId) {
       api.syncStatus(activeUserId).then(setSync).catch(() => {});
     }
+    api.redirectUris().then(setRedirectUris).catch(() => {});
   }, [activeUserId]);
+
+  function copy(val) {
+    navigator.clipboard.writeText(val);
+    showToast('Copied ✓');
+  }
 
   async function saveKey(key, val) {
     if (window.electron) {
@@ -179,7 +186,16 @@ export default function Settings() {
             onClick={e => { e.preventDefault(); window.electron?.openUrl(e.currentTarget.href); }}
             className="text-accent hover:underline">myanimelist.net/apiconfig</a> → Create ID</div>
           <div>2. <b>App Type:</b> Web</div>
-          <div>3. <b>App Redirect URL:</b> <code className="text-accent bg-bg4 px-1.5 py-0.5 rounded select-text">http://localhost:57835/mal-callback</code></div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span>3.</span><b>App Redirect URL:</b>
+            <code className="text-accent bg-bg4 px-1.5 py-0.5 rounded select-text">{redirectUris.mal || 'http://localhost:57835/mal-callback'}</code>
+            <button
+              onClick={() => copy(redirectUris.mal || 'http://localhost:57835/mal-callback')}
+              className="text-[10px] bg-accent text-white px-2 py-0.5 rounded hover:bg-accent3"
+            >
+              Copy
+            </button>
+          </div>
           <div>4. <b>Homepage URL:</b> anything (e.g. <code className="text-accent bg-bg4 px-1 py-0.5 rounded">https://github.com/ktdtech223dev/nstreams</code>)</div>
           <div>5. Fill the rest however (name "N Streams", description anything). Submit.</div>
           <div className="text-gold">6. MAL requires <b>BOTH</b> Client ID and Client Secret — copy both from your app page.</div>
@@ -249,7 +265,16 @@ export default function Settings() {
             onClick={e => { e.preventDefault(); window.electron?.openUrl(e.currentTarget.href); }}
             className="text-accent hover:underline">anilist.co/settings/developer</a> → Create New Client</div>
           <div>2. <b>Name:</b> N Streams</div>
-          <div>3. <b>Redirect URL:</b> <code className="text-accent bg-bg4 px-1.5 py-0.5 rounded select-text">http://localhost:57836/anilist-callback</code></div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span>3.</span><b>Redirect URL:</b>
+            <code className="text-accent bg-bg4 px-1.5 py-0.5 rounded select-text">{redirectUris.anilist || 'http://localhost:57836/anilist-callback'}</code>
+            <button
+              onClick={() => copy(redirectUris.anilist || 'http://localhost:57836/anilist-callback')}
+              className="text-[10px] bg-accent text-white px-2 py-0.5 rounded hover:bg-accent3"
+            >
+              Copy
+            </button>
+          </div>
           <div>4. Save. Copy the <b>ID</b> (a number) from the resulting client and paste below.</div>
         </div>
 

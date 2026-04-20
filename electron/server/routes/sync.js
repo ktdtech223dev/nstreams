@@ -3,9 +3,18 @@ const { shell } = require('electron');
 const { getDB } = require('../database');
 const mal = require('../mal');
 const anilist = require('../anilist');
-const { waitForCallback, MAL_REDIRECT, ANILIST_REDIRECT } = require('../../oauth');
+const { waitForCallback, MAL_REDIRECT, ANILIST_REDIRECT, malRedirectUri, anilistRedirectUri } = require('../../oauth');
 
 const router = express.Router();
+
+// Expose the exact redirect URIs we'll use — renderer shows these
+// with copy-to-clipboard so users can't typo them into MAL/AniList.
+router.get('/sync/redirect-uris', (req, res) => {
+  res.json({
+    mal: malRedirectUri(),
+    anilist: anilistRedirectUri()
+  });
+});
 
 // ───────────── MAL ─────────────
 // One-shot: opens MAL auth URL in browser, starts a loopback server on

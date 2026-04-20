@@ -75,8 +75,19 @@ async function exchangeCode(code, userId) {
     );
   } catch (e) {
     const body = e.response?.data;
-    const msg = body?.error_description || body?.message || body?.error || e.message;
-    throw new Error(`MAL token exchange failed (${e.response?.status || '?'}): ${msg}`);
+    const err = body?.error || '';
+    const desc = body?.error_description || body?.message || '';
+    let hint = '';
+    if (/redirect|invalid_grant/i.test(err + ' ' + desc)) {
+      hint = ` — Open myanimelist.net/apiconfig → your N Streams app → check App Redirect URL is EXACTLY: ${malRedirectUri()} (copy from Settings).`;
+    } else if (/invalid_client|client/i.test(err)) {
+      hint = ` — Check Client ID and Client Secret in Settings match your MAL app.`;
+    } else if (/expired|used/i.test(desc)) {
+      hint = ` — Authorization codes expire in 10 min and are single-use. Click Connect MAL again.`;
+    }
+    throw new Error(
+      `MAL token exchange failed (${e.response?.status || '?'}): ${desc || err || e.message}${hint}`
+    );
   }
 
   const db = getDB();
