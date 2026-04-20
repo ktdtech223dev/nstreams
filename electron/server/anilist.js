@@ -7,8 +7,14 @@ const AL_BASE = 'https://graphql.anilist.co';
 const AL_AUTH = 'https://anilist.co/api/v2/oauth';
 
 function getAuthUrl() {
-  const clientId = store.get('anilist_client_id') || '';
-  return `${AL_AUTH}/authorize?client_id=${clientId}&response_type=token`;
+  const clientId = store.get('anilist_client_id');
+  if (!clientId || !String(clientId).trim()) {
+    throw new Error(
+      'ANILIST_CLIENT_ID_MISSING: Save your AniList Client ID in Settings before connecting. ' +
+      'Get one at anilist.co/settings/developer — set Redirect URL to nstreams://anilist-callback'
+    );
+  }
+  return `${AL_AUTH}/authorize?client_id=${String(clientId).trim()}&response_type=token`;
 }
 
 async function fetchAniListUser(token) {

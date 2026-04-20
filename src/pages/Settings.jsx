@@ -8,6 +8,8 @@ export default function Settings() {
   const [tmdbKey, setTmdbKey] = useState('');
   const [malClientId, setMalClientId] = useState('');
   const [alClientId, setAlClientId] = useState('');
+  const [malSaved, setMalSaved] = useState('');
+  const [alSaved, setAlSaved] = useState('');
   const [sync, setSync] = useState(null);
   const [syncing, setSyncing] = useState(false);
 
@@ -15,8 +17,10 @@ export default function Settings() {
     (async () => {
       if (window.electron) {
         setTmdbKey((await window.electron.getStore('tmdb_api_key')) || '');
-        setMalClientId((await window.electron.getStore('mal_client_id')) || '');
-        setAlClientId((await window.electron.getStore('anilist_client_id')) || '');
+        const mid = (await window.electron.getStore('mal_client_id')) || '';
+        setMalClientId(mid); setMalSaved(mid);
+        const aid = (await window.electron.getStore('anilist_client_id')) || '';
+        setAlClientId(aid); setAlSaved(aid);
       }
     })();
   }, []);
@@ -30,6 +34,8 @@ export default function Settings() {
   async function saveKey(key, val) {
     if (window.electron) {
       await window.electron.setStore(key, val);
+      if (key === 'mal_client_id') setMalSaved(val);
+      if (key === 'anilist_client_id') setAlSaved(val);
       showToast('Saved ✓');
     }
   }
@@ -44,22 +50,30 @@ export default function Settings() {
   }
 
   async function connectMal() {
+    if (!malSaved || !malSaved.trim()) {
+      showToast('Paste your MAL Client ID above and click Save first');
+      return;
+    }
     try {
       const { url } = await api.malAuthUrl(activeUserId);
       if (window.electron) await window.electron.openUrl(url);
       else window.open(url, '_blank');
     } catch (e) {
-      showToast('Failed: ' + e.message);
+      showToast(e.message.replace(/^[A-Z_]+:\s*/, ''));
     }
   }
 
   async function connectAnilist() {
+    if (!alSaved || !alSaved.trim()) {
+      showToast('Paste your AniList Client ID above and click Save first');
+      return;
+    }
     try {
       const { url } = await api.anilistAuthUrl();
       if (window.electron) await window.electron.openUrl(url);
       else window.open(url, '_blank');
     } catch (e) {
-      showToast('Failed: ' + e.message);
+      showToast(e.message.replace(/^[A-Z_]+:\s*/, ''));
     }
   }
 
@@ -147,23 +161,36 @@ export default function Settings() {
       </Section>
 
       <Section title={`MyAnimeList — ${activeUser?.display_name}`}>
+        <div className="bg-bg3 border border-border rounded-lg p-3 mb-4 text-xs text-muted space-y-1">
+          <div className="text-white text-sm font-medium mb-1">Before connecting:</div>
+          <div>1. Go to <a
+            href="https://myanimelist.net/apiconfig"
+            onClick={e => { e.preventDefault(); window.electron?.openUrl(e.currentTarget.href); }}
+            className="text-accent hover:underline">myanimelist.net/apiconfig</a> → Create ID</div>
+          <div>2. <b>App Type:</b> Web</div>
+          <div>3. <b>App Redirect URL:</b> <code className="text-accent bg-bg4 px-1.5 py-0.5 rounded select-text">nstreams://mal-callback</code></div>
+          <div>4. Fill in the rest however (name "N Streams", description anything). Submit.</div>
+          <div>5. Copy the <b>Client ID</b> (not Client Secret) from the resulting app page and paste below.</div>
+        </div>
+
         <label className="text-xs uppercase text-muted">Client ID</label>
-        <div className="flex gap-2 mt-1 mb-4">
+        <div className="flex gap-2 mt-1 mb-2">
           <input
             value={malClientId}
             onChange={e => setMalClientId(e.target.value)}
-            placeholder="Your MAL app client ID"
+            placeholder="Paste MAL Client ID here"
             className="input flex-1"
           />
-          <button onClick={() => saveKey('mal_client_id', malClientId)} className="btn btn-primary">Save</button>
+          <button onClick={() => saveKey('mal_client_id', malClientId)} className="btn btn-primary">
+            {malSaved && malSaved === malClientId ? '✓ Saved' : 'Save'}
+          </button>
         </div>
-        <a
-          href="https://myanimelist.net/apiconfig"
-          onClick={e => { e.preventDefault(); window.electron?.openUrl(e.currentTarget.href); }}
-          className="text-xs text-accent hover:underline block mb-4"
-        >
-          Get a free client ID at myanimelist.net/apiconfig →
-        </a>
+        {!malSaved && (
+          <div className="text-xs text-red mb-4">
+            ⚠ No Client ID saved — Connect MAL will not work.
+          </div>
+        )}
+
         {sync?.mal?.connected ? (
           <div className="bg-bg3 p-4 rounded-lg">
             <div className="flex items-center gap-2 mb-2">
@@ -178,28 +205,46 @@ export default function Settings() {
             </button>
           </div>
         ) : (
-          <button onClick={connectMal} className="btn btn-primary">Connect MAL</button>
+          <button
+            onClick={connectMal}
+            disabled={!malSaved}
+            className="btn btn-primary disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Connect MAL
+          </button>
         )}
       </Section>
 
       <Section title={`AniList — ${activeUser?.display_name}`}>
+        <div className="bg-bg3 border border-border rounded-lg p-3 mb-4 text-xs text-muted space-y-1">
+          <div className="text-white text-sm font-medium mb-1">Before connecting:</div>
+          <div>1. Go to <a
+            href="https://anilist.co/settings/developer"
+            onClick={e => { e.preventDefault(); window.electron?.openUrl(e.currentTarget.href); }}
+            className="text-accent hover:underline">anilist.co/settings/developer</a> → Create New Client</div>
+          <div>2. <b>Name:</b> N Streams</div>
+          <div>3. <b>Redirect URL:</b> <code className="text-accent bg-bg4 px-1.5 py-0.5 rounded select-text">nstreams://anilist-callback</code></div>
+          <div>4. Save. Copy the <b>ID</b> (a number) from the resulting client and paste below.</div>
+        </div>
+
         <label className="text-xs uppercase text-muted">Client ID</label>
-        <div className="flex gap-2 mt-1 mb-4">
+        <div className="flex gap-2 mt-1 mb-2">
           <input
             value={alClientId}
             onChange={e => setAlClientId(e.target.value)}
-            placeholder="Your AniList app client ID"
+            placeholder="Paste AniList Client ID (numeric)"
             className="input flex-1"
           />
-          <button onClick={() => saveKey('anilist_client_id', alClientId)} className="btn btn-primary">Save</button>
+          <button onClick={() => saveKey('anilist_client_id', alClientId)} className="btn btn-primary">
+            {alSaved && alSaved === alClientId ? '✓ Saved' : 'Save'}
+          </button>
         </div>
-        <a
-          href="https://anilist.co/settings/developer"
-          onClick={e => { e.preventDefault(); window.electron?.openUrl(e.currentTarget.href); }}
-          className="text-xs text-accent hover:underline block mb-4"
-        >
-          Get a free client ID at anilist.co/settings/developer →
-        </a>
+        {!alSaved && (
+          <div className="text-xs text-red mb-4">
+            ⚠ No Client ID saved — Connect AniList will not work.
+          </div>
+        )}
+
         {sync?.anilist?.connected ? (
           <div className="bg-bg3 p-4 rounded-lg">
             <div className="flex items-center gap-2 mb-2">
@@ -214,7 +259,13 @@ export default function Settings() {
             </button>
           </div>
         ) : (
-          <button onClick={connectAnilist} className="btn btn-primary">Connect AniList</button>
+          <button
+            onClick={connectAnilist}
+            disabled={!alSaved}
+            className="btn btn-primary disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Connect AniList
+          </button>
         )}
       </Section>
 

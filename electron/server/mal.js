@@ -16,13 +16,22 @@ function generateChallenge(verifier) {
 }
 
 function getAuthUrl(userId) {
+  const clientId = store.get('mal_client_id');
+  if (!clientId || !clientId.trim()) {
+    throw new Error(
+      'MAL_CLIENT_ID_MISSING: Save your MAL Client ID in Settings before connecting. ' +
+      'Get one free at myanimelist.net/apiconfig — App Type: Web, ' +
+      'App Redirect URL: nstreams://mal-callback'
+    );
+  }
+
   const verifier = generateVerifier();
   const challenge = generateChallenge(verifier);
   store.set(`mal_verifier_${userId}`, verifier);
 
   const params = new URLSearchParams({
     response_type: 'code',
-    client_id: store.get('mal_client_id') || '',
+    client_id: clientId.trim(),
     code_challenge: challenge,
     code_challenge_method: 'S256',
     redirect_uri: 'nstreams://mal-callback'
