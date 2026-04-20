@@ -2,6 +2,7 @@ const axios = require('axios');
 const Store = require('electron-store');
 const store = new Store();
 const { getDB } = require('./database');
+const { anilistRedirectUri } = require('../oauth');
 
 const AL_BASE = 'https://graphql.anilist.co';
 const AL_AUTH = 'https://anilist.co/api/v2/oauth';
@@ -14,7 +15,12 @@ function getAuthUrl() {
       'Get one at anilist.co/settings/developer — set Redirect URL to nstreams://anilist-callback'
     );
   }
-  return `${AL_AUTH}/authorize?client_id=${String(clientId).trim()}&response_type=token`;
+  const params = new URLSearchParams({
+    client_id: String(clientId).trim(),
+    response_type: 'token',
+    redirect_uri: anilistRedirectUri()
+  });
+  return `${AL_AUTH}/authorize?${params}`;
 }
 
 async function fetchAniListUser(token) {

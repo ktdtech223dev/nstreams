@@ -53,11 +53,9 @@ export const api = {
   discoverService: (siteId, type = 'tv') => req('GET', `/discover/service/${siteId}?type=${type}`),
   discoverTrending: (type = 'all') => req('GET', `/discover/trending?type=${type}`),
   linkableSites: () => req('GET', '/sites/linkable'),
-  malAuthUrl: (userId) => req('GET', `/sync/mal/auth-url?userId=${userId}`),
-  malCallback: (b) => req('POST', '/sync/mal/callback', b),
+  malConnect: (userId) => req('POST', '/sync/mal/connect', { userId }),
   malSync: (userId) => req('POST', `/sync/mal/${userId}`),
-  anilistAuthUrl: () => req('GET', '/sync/anilist/auth-url'),
-  anilistCallback: (b) => req('POST', '/sync/anilist/callback', b),
+  anilistConnect: (userId) => req('POST', '/sync/anilist/connect', { userId }),
   anilistSync: (userId) => req('POST', `/sync/anilist/${userId}`)
 };
 

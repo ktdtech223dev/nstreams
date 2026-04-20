@@ -64,9 +64,10 @@ export default function Settings() {
       return;
     }
     try {
-      const { url } = await api.malAuthUrl(activeUserId);
-      if (window.electron) await window.electron.openUrl(url);
-      else window.open(url, '_blank');
+      showToast('Opening MAL in your browser — approve, then come back');
+      const r = await api.malConnect(activeUserId);
+      setSync(await api.syncStatus(activeUserId));
+      showToast(`Connected as ${r.profile.name} ✓`);
     } catch (e) {
       showToast(e.message.replace(/^[A-Z_]+:\s*/, ''));
     }
@@ -78,9 +79,10 @@ export default function Settings() {
       return;
     }
     try {
-      const { url } = await api.anilistAuthUrl();
-      if (window.electron) await window.electron.openUrl(url);
-      else window.open(url, '_blank');
+      showToast('Opening AniList in your browser — approve, then come back');
+      const r = await api.anilistConnect(activeUserId);
+      setSync(await api.syncStatus(activeUserId));
+      showToast(`Connected as ${r.profile.name} ✓`);
     } catch (e) {
       showToast(e.message.replace(/^[A-Z_]+:\s*/, ''));
     }
@@ -177,7 +179,7 @@ export default function Settings() {
             onClick={e => { e.preventDefault(); window.electron?.openUrl(e.currentTarget.href); }}
             className="text-accent hover:underline">myanimelist.net/apiconfig</a> → Create ID</div>
           <div>2. <b>App Type:</b> Web</div>
-          <div>3. <b>App Redirect URL:</b> <code className="text-accent bg-bg4 px-1.5 py-0.5 rounded select-text">nstreams://mal-callback</code></div>
+          <div>3. <b>App Redirect URL:</b> <code className="text-accent bg-bg4 px-1.5 py-0.5 rounded select-text">http://localhost:57835/mal-callback</code></div>
           <div>4. <b>Homepage URL:</b> anything (e.g. <code className="text-accent bg-bg4 px-1 py-0.5 rounded">https://github.com/ktdtech223dev/nstreams</code>)</div>
           <div>5. Fill the rest however (name "N Streams", description anything). Submit.</div>
           <div className="text-gold">6. MAL requires <b>BOTH</b> Client ID and Client Secret — copy both from your app page.</div>
@@ -247,7 +249,7 @@ export default function Settings() {
             onClick={e => { e.preventDefault(); window.electron?.openUrl(e.currentTarget.href); }}
             className="text-accent hover:underline">anilist.co/settings/developer</a> → Create New Client</div>
           <div>2. <b>Name:</b> N Streams</div>
-          <div>3. <b>Redirect URL:</b> <code className="text-accent bg-bg4 px-1.5 py-0.5 rounded select-text">nstreams://anilist-callback</code></div>
+          <div>3. <b>Redirect URL:</b> <code className="text-accent bg-bg4 px-1.5 py-0.5 rounded select-text">http://localhost:57836/anilist-callback</code></div>
           <div>4. Save. Copy the <b>ID</b> (a number) from the resulting client and paste below.</div>
         </div>
 

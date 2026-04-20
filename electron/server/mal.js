@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const Store = require('electron-store');
 const store = new Store();
 const { getDB } = require('./database');
+const { malRedirectUri } = require('../oauth');
 
 const MAL_BASE = 'https://api.myanimelist.net/v2';
 const MAL_AUTH = 'https://myanimelist.net/v1/oauth2';
@@ -34,7 +35,7 @@ function getAuthUrl(userId) {
     client_id: clientId.trim(),
     code_challenge: challenge,
     code_challenge_method: 'S256',
-    redirect_uri: 'nstreams://mal-callback'
+    redirect_uri: malRedirectUri()
   });
   return `${MAL_AUTH}/authorize?${params}`;
 }
@@ -67,7 +68,7 @@ async function exchangeCode(code, userId) {
         client_secret: String(clientSecret).trim(),
         grant_type: 'authorization_code',
         code,
-        redirect_uri: 'nstreams://mal-callback',
+        redirect_uri: malRedirectUri(),
         code_verifier: verifier
       }),
       { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
