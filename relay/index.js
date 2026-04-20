@@ -7,6 +7,8 @@ const express = require('express');
 const cors = require('cors');
 const { WebSocketServer } = require('ws');
 const { nanoid } = require('nanoid');
+const store = require('./store');
+store.init();
 
 const PORT = process.env.PORT || 8787;
 const app = express();
@@ -42,7 +44,14 @@ function publicParty(p) {
 }
 
 // ─── REST ─────────────────────────────────────────────────────
-app.get('/', (_, res) => res.json({ ok: true, service: 'nstreams-relay', parties: parties.size }));
+app.get('/', (_, res) => res.json({
+  ok: true,
+  service: 'nstreams-relay',
+  parties: parties.size,
+  persistent: store.enabled()
+}));
+
+app.get('/history', (_, res) => res.json(store.listHistory(50)));
 
 app.post('/parties', (req, res) => {
   const { host_id, host_name, host_color, content, site } = req.body || {};
@@ -64,6 +73,7 @@ app.post('/parties', (req, res) => {
   parties.set(id, party);
   // Also index by code
   parties.set(`code:${code}`, party);
+  store.saveParty(party);
   res.json(publicParty(party));
 });
 
@@ -86,6 +96,7 @@ app.delete('/parties/:id', (req, res) => {
   if (!p) return res.json({ ok: true });
   parties.delete(p.id);
   parties.delete(`code:${p.code}`);
+  store.endParty(p.id);
   broadcast(p.id, { type: 'party_ended' });
   res.json({ ok: true });
 });
@@ -130,6 +141,7 @@ wss.on('connection', (ws) => {
         };
         p.members[user.id] = user;
         clients.set(ws, { party_id: p.id, user });
+        store.recordMember(p.id, user);
         ws.send(JSON.stringify({ type: 'joined', party: publicParty(p) }));
         presenceUpdate(p.id);
         broadcast(p.id, { type: 'system', text: `${user.name} joined` }, ws);
@@ -150,6 +162,7 @@ wss.on('connection', (ws) => {
         };
         p.messages.push(message);
         if (p.messages.length > 500) p.messages.shift();
+        store.recordMessage(p.id, message);
         broadcast(p.id, { type: 'chat', message });
         break;
       }
@@ -221,6 +234,7 @@ wss.on('connection', (ws) => {
     const p = parties.get(meta.party_id);
     if (p) {
       delete p.members[meta.user.id];
+      store.memberLeft(p.id, meta.user.id);
       presenceUpdate(p.id);
       broadcast(p.id, { type: 'system', text: `${meta.user.name} left` });
       // Auto-clean empty parties after 30s

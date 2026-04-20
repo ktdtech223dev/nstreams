@@ -1,9 +1,17 @@
-const { app, BrowserWindow, shell, ipcMain, session } = require('electron');
+const { app, BrowserWindow, shell, ipcMain, session, dialog } = require('electron');
 const path = require('path');
+const https = require('https');
 const Store = require('electron-store');
 const store = new Store();
-const { startServer } = require('./server/index');
+const { startServer, getResolvedPort } = require('./server/index');
 const party = require('./party');
+
+// Lock to a single running instance BEFORE anything else touches the port.
+const singleInstance = app.requestSingleInstanceLock();
+if (!singleInstance) {
+  app.quit();
+  process.exit(0);
+}
 
 let mainWindow;
 const viewerWindows = new Map(); // sessionId → BrowserWindow
@@ -16,7 +24,19 @@ app.commandLine.appendSwitch('enable-features', 'PlatformHEVCDecoderSupport,Hard
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 
 async function createWindow() {
-  await startServer();
+  let apiPort;
+  try {
+    apiPort = await startServer();
+  } catch (err) {
+    dialog.showErrorBox(
+      'N Streams — failed to start',
+      `The local API server couldn't start.\n\n${err.message}\n\n` +
+      `If you have another copy of N Streams running, please close it and try again. ` +
+      `If the issue persists, restart your computer to free the port.`
+    );
+    app.quit();
+    return;
+  }
 
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -33,11 +53,15 @@ async function createWindow() {
   });
 
   const isDev = process.env.NODE_ENV === 'development';
+  // Pass the resolved API port to the renderer via query so api.js can find it.
+  const query = `?apiPort=${apiPort}&version=${encodeURIComponent(app.getVersion())}`;
 
   if (isDev) {
-    mainWindow.loadURL('http://localhost:5173');
+    mainWindow.loadURL(`http://localhost:5173/${query}`);
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+    mainWindow.loadFile(path.join(__dirname, '../dist/index.html'), {
+      search: query.replace(/^\?/, '')
+    });
   }
 }
 
@@ -52,19 +76,14 @@ if (process.defaultApp) {
   app.setAsDefaultProtocolClient('nstreams');
 }
 
-const gotLock = app.requestSingleInstanceLock();
-if (!gotLock) {
-  app.quit();
-} else {
-  app.on('second-instance', (event, argv) => {
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.focus();
-      const url = argv.find(a => a.startsWith('nstreams://'));
-      if (url) mainWindow.webContents.send('oauth-callback', url);
-    }
-  });
-}
+app.on('second-instance', (event, argv) => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+    const url = argv.find(a => a.startsWith('nstreams://'));
+    if (url) mainWindow.webContents.send('oauth-callback', url);
+  }
+});
 
 app.on('open-url', (event, url) => {
   event.preventDefault();
@@ -143,6 +162,74 @@ ipcMain.handle('watch-in-app', async (_, { url, title, sessionId, partyId }) => 
   });
 
   return { ok: true };
+});
+
+// ───────── App info + updater ─────────
+ipcMain.handle('get-app-info', () => ({
+  version: app.getVersion(),
+  apiPort: getResolvedPort(),
+  userDataPath: app.getPath('userData'),
+  platform: process.platform,
+  arch: process.arch
+}));
+
+// Simple updater: queries GitHub Releases, compares tag against current version.
+// Doesn't auto-install (portable exe can't safely replace itself while running).
+// Surfaces a download link if there's a newer release.
+ipcMain.handle('check-for-updates', async () => {
+  return new Promise((resolve) => {
+    const opts = {
+      hostname: 'api.github.com',
+      path: '/repos/ktdtech223dev/nstreams/releases/latest',
+      method: 'GET',
+      headers: { 'User-Agent': `NStreams/${app.getVersion()}`, 'Accept': 'application/vnd.github+json' }
+    };
+    const req = https.request(opts, (res) => {
+      let body = '';
+      res.on('data', (chunk) => { body += chunk; });
+      res.on('end', () => {
+        try {
+          const rel = JSON.parse(body);
+          if (!rel || !rel.tag_name) {
+            resolve({ error: 'Unable to read latest release' });
+            return;
+          }
+          const latest = String(rel.tag_name).replace(/^v/, '');
+          const current = app.getVersion();
+          const hasUpdate = cmpSemver(latest, current) > 0;
+          const asset = (rel.assets || []).find(a => /\.exe$/i.test(a.name) && /portable/i.test(a.name));
+          resolve({
+            current,
+            latest,
+            hasUpdate,
+            name: rel.name,
+            notes: rel.body,
+            publishedAt: rel.published_at,
+            downloadUrl: asset?.browser_download_url || rel.html_url,
+            htmlUrl: rel.html_url
+          });
+        } catch (e) {
+          resolve({ error: e.message });
+        }
+      });
+    });
+    req.on('error', (e) => resolve({ error: e.message }));
+    req.end();
+  });
+});
+
+function cmpSemver(a, b) {
+  const pa = String(a).split('.').map(n => parseInt(n) || 0);
+  const pb = String(b).split('.').map(n => parseInt(n) || 0);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d !== 0) return d;
+  }
+  return 0;
+}
+
+ipcMain.handle('open-user-data-folder', () => {
+  shell.openPath(app.getPath('userData'));
 });
 
 // Clear saved cookies / login for the viewer partition

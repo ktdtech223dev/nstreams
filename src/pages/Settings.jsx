@@ -269,6 +269,8 @@ export default function Settings() {
         )}
       </Section>
 
+      <AboutSection />
+
       <WatchPartySection />
 
       <LinkedAccountsSection />
@@ -284,6 +286,115 @@ export default function Settings() {
           {syncing ? 'Syncing...' : 'Sync All Now'}
         </button>
       </Section>
+    </div>
+  );
+}
+
+function AboutSection() {
+  const { showToast } = useApp();
+  const [info, setInfo] = useState(null);
+  const [update, setUpdate] = useState(null);
+  const [checking, setChecking] = useState(false);
+
+  useEffect(() => {
+    if (window.electron?.getAppInfo) {
+      window.electron.getAppInfo().then(setInfo);
+    }
+  }, []);
+
+  async function check() {
+    setChecking(true);
+    setUpdate(null);
+    try {
+      const r = await window.electron.checkForUpdates();
+      if (r.error) {
+        showToast('Update check failed: ' + r.error);
+      } else {
+        setUpdate(r);
+        if (!r.hasUpdate) showToast('You\'re on the latest version ✓');
+      }
+    } finally {
+      setChecking(false);
+    }
+  }
+
+  function downloadUpdate() {
+    if (update?.downloadUrl) window.electron.openUrl(update.downloadUrl);
+  }
+
+  return (
+    <Section title="About & Updates">
+      <div className="grid grid-cols-2 gap-3 text-sm mb-4">
+        <InfoRow label="Version" value={info?.version || '—'} />
+        <InfoRow label="API Port" value={info?.apiPort || '—'} />
+        <InfoRow label="Platform" value={info ? `${info.platform} ${info.arch}` : '—'} />
+        <InfoRow
+          label="Your Data"
+          value={
+            <button
+              onClick={() => window.electron?.openUserDataFolder()}
+              className="text-accent hover:underline text-left truncate"
+              title={info?.userDataPath}
+            >
+              Open folder
+            </button>
+          }
+        />
+      </div>
+
+      <div className="bg-bg3 border border-border rounded-lg p-3 mb-4 text-xs text-muted">
+        <div className="text-white text-sm font-medium mb-1">Your data persists across updates.</div>
+        Watchlist, settings, API keys, MAL/AniList tokens, and streaming-service logins
+        are saved under <code className="text-accent">{info?.userDataPath || '%APPDATA%/N Streams/'}</code>.
+        Replacing the portable exe with a newer version keeps everything intact.
+      </div>
+
+      <div className="flex gap-2 items-center mb-3">
+        <button onClick={check} disabled={checking} className="btn btn-primary disabled:opacity-50">
+          {checking ? 'Checking…' : '⟳ Check for Updates'}
+        </button>
+        {update && (
+          <span className={`text-sm ${update.hasUpdate ? 'text-gold' : 'text-muted'}`}>
+            {update.hasUpdate
+              ? `New: v${update.latest} (you're on v${update.current})`
+              : `Up to date · v${update.current}`}
+          </span>
+        )}
+      </div>
+
+      {update?.hasUpdate && (
+        <div className="bg-gold/10 border border-gold/40 rounded-lg p-4">
+          <div className="flex items-start justify-between gap-3 mb-2">
+            <div>
+              <div className="text-white font-medium">{update.name || `Version ${update.latest}`}</div>
+              <div className="text-xs text-muted">
+                Published {new Date(update.publishedAt).toLocaleDateString()}
+              </div>
+            </div>
+            <button onClick={downloadUpdate} className="btn btn-primary shrink-0">
+              ↓ Download Update
+            </button>
+          </div>
+          {update.notes && (
+            <pre className="text-xs text-muted whitespace-pre-wrap max-h-40 overflow-y-auto bg-bg4 rounded p-2 mt-2">
+              {update.notes}
+            </pre>
+          )}
+          <div className="text-xs text-muted mt-3">
+            Download the new portable exe, close N Streams, replace the old one, and relaunch.
+            Your data and logins carry over automatically.
+          </div>
+        </div>
+      )}
+    </Section>
+  );
+}
+
+function InfoRow({ label, value }) {
+  return (
+    <div>
+      <div className="text-xs text-muted uppercase tracking-wider">{label}</div>
+      <div className="text-white mt-0.5">{value}</div>
     </div>
   );
 }

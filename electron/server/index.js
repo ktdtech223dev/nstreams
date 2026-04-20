@@ -4,10 +4,14 @@ const { getDB } = require('./database');
 const mal = require('./mal');
 const anilist = require('./anilist');
 
-const PORT = 57832;
+const PREFERRED_PORT = 57832;
+const PORT_RANGE = 20;
+let resolvedPort = null;
+
+function getResolvedPort() { return resolvedPort; }
 
 function startServer() {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const app = express();
     app.use(cors());
     app.use(express.json({ limit: '10mb' }));
@@ -23,12 +27,28 @@ function startServer() {
     app.use('/api', require('./routes/sessions'));
     app.use('/api', require('./routes/sync'));
 
-    app.get('/api/health', (req, res) => res.json({ ok: true }));
+    app.get('/api/health', (req, res) => res.json({ ok: true, version: process.env.npm_package_version }));
 
-    app.listen(PORT, () => {
-      console.log(`N Streams server running on http://localhost:${PORT}`);
-      resolve();
-    });
+    // Try preferred port first, step up if busy.
+    let attempt = 0;
+    const tryListen = () => {
+      const port = PREFERRED_PORT + attempt;
+      const server = app.listen(port, '127.0.0.1');
+      server.once('listening', () => {
+        resolvedPort = port;
+        console.log(`N Streams server running on http://localhost:${port}`);
+        resolve(port);
+      });
+      server.once('error', (err) => {
+        if (err.code === 'EADDRINUSE' && attempt < PORT_RANGE) {
+          attempt++;
+          tryListen();
+        } else {
+          reject(err);
+        }
+      });
+    };
+    tryListen();
 
     // Auto-sync every 6 hours
     setInterval(async () => {
@@ -63,4 +83,4 @@ function startServer() {
   });
 }
 
-module.exports = { startServer, PORT };
+module.exports = { startServer, getResolvedPort, PREFERRED_PORT };

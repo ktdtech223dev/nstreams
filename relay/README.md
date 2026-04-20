@@ -1,6 +1,6 @@
 # N Streams Relay
 
-WebSocket + REST relay for Watch Parties. In-memory state — ephemeral parties. No database required.
+WebSocket + REST relay for Watch Parties. Runs in-memory by default; opts into SQLite persistence when a volume is mounted.
 
 ## Deploy to Railway
 
@@ -10,6 +10,19 @@ WebSocket + REST relay for Watch Parties. In-memory state — ephemeral parties.
 4. Open N Streams → Settings → set **Relay URL** to that URL
 
 That's it. Free tier Railway is more than enough for a 4-person crew.
+
+### Optional: persistent party history (Railway Volume)
+
+By default party state lives in memory — restart the service and history's gone. To persist chat logs, party records, and member history across restarts:
+
+1. In Railway → your relay service → **Volumes** tab → **New Volume**
+2. **Mount path:** `/data`
+3. Variables → add: `DATA_DIR=/data`
+4. Redeploy
+
+The relay auto-detects the mount and switches on SQLite at `/data/relay.db`. `GET /` now reports `"persistent": true`, and `GET /history` returns the last 50 parties.
+
+Volume is free up to 5 GB on Railway's developer plan, which is enough for *years* of party chat at your crew's scale.
 
 ## Local dev
 

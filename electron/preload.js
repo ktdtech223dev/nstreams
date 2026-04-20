@@ -1,6 +1,17 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+// Pull port from query string synchronously so the renderer can build
+// the API base before any fetch fires.
+const qs = new URLSearchParams(window.location.search);
+const apiPort = parseInt(qs.get('apiPort')) || 57832;
+const appVersion = qs.get('version') || '';
+
 contextBridge.exposeInMainWorld('electron', {
+  apiPort,
+  appVersion,
+  getAppInfo: () => ipcRenderer.invoke('get-app-info'),
+  checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+  openUserDataFolder: () => ipcRenderer.invoke('open-user-data-folder'),
   openUrl: (url) => ipcRenderer.invoke('open-url', url),
   minimize: () => ipcRenderer.invoke('minimize'),
   maximize: () => ipcRenderer.invoke('maximize'),
