@@ -14,9 +14,17 @@ function init() {
     console.log('[store] no DATA_DIR set — running in memory only');
     return null;
   }
+  // better-sqlite3 is an optionalDependency — may not be installed if
+  // the build host can't compile it. Fall back to memory if missing.
+  let Database;
+  try {
+    Database = require('better-sqlite3');
+  } catch (e) {
+    console.warn('[store] better-sqlite3 not available — memory only:', e.message);
+    return null;
+  }
   try {
     fs.mkdirSync(dir, { recursive: true });
-    const Database = require('better-sqlite3');
     db = new Database(path.join(dir, 'relay.db'));
     db.pragma('journal_mode = WAL');
     db.exec(`

@@ -1,0 +1,10 @@
+# Pin Node version for Railway — 20.x has prebuilt binaries for
+# better-sqlite3 so the build doesn't need Python/node-gyp.
+[phases.setup]
+nixPkgs = ["nodejs_20"]
+
+[phases.install]
+cmds = ["npm ci --omit=dev || npm install --omit=dev"]
+
+[start]
+cmd = "node index.js"
