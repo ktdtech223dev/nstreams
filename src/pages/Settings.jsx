@@ -66,10 +66,8 @@ export default function Settings() {
       showToast('Paste your MAL Client ID above and click Save first');
       return;
     }
-    if (!malSecretSaved || !malSecretSaved.trim()) {
-      showToast('MAL also requires a Client Secret. Save it above first.');
-      return;
-    }
+    // Client Secret is only required for "Web" app type.
+    // "Other" type doesn't issue one — skip the check.
     try {
       showToast('Opening MAL in your browser — approve, then come back');
       const r = await api.malConnect(activeUserId);
@@ -185,7 +183,7 @@ export default function Settings() {
             href="https://myanimelist.net/apiconfig"
             onClick={e => { e.preventDefault(); window.electron?.openUrl(e.currentTarget.href); }}
             className="text-accent hover:underline">myanimelist.net/apiconfig</a> → Create ID</div>
-          <div>2. <b>App Type:</b> Web</div>
+          <div>2. <b>App Type:</b> Other <span className="text-gold">(recommended — skips the Client Secret step)</span>, or Web</div>
           <div className="flex items-center gap-2 flex-wrap">
             <span>3.</span><b>App Redirect URL:</b>
             <code className="text-accent bg-bg4 px-1.5 py-0.5 rounded select-text">{redirectUris.mal || 'http://localhost:57835/mal-callback'}</code>
@@ -198,7 +196,7 @@ export default function Settings() {
           </div>
           <div>4. <b>Homepage URL:</b> anything (e.g. <code className="text-accent bg-bg4 px-1 py-0.5 rounded">https://github.com/ktdtech223dev/nstreams</code>)</div>
           <div>5. Fill the rest however (name "N Streams", description anything). Submit.</div>
-          <div className="text-gold">6. MAL requires <b>BOTH</b> Client ID and Client Secret — copy both from your app page.</div>
+          <div className="text-gold">6. <b>Web type:</b> copy both Client ID AND Client Secret. <b>Other type:</b> just Client ID (no secret is issued).</div>
         </div>
 
         <label className="text-xs uppercase text-muted">Client ID</label>
@@ -214,7 +212,7 @@ export default function Settings() {
           </button>
         </div>
 
-        <label className="text-xs uppercase text-muted">Client Secret</label>
+        <label className="text-xs uppercase text-muted">Client Secret <span className="text-muted/60 normal-case">(Web type only — leave blank if Other type)</span></label>
         <div className="flex gap-2 mt-1 mb-2">
           <input
             type="password"
@@ -227,9 +225,9 @@ export default function Settings() {
             {malSecretSaved && malSecretSaved === malClientSecret ? '✓ Saved' : 'Save'}
           </button>
         </div>
-        {(!malSaved || !malSecretSaved) && (
+        {!malSaved && (
           <div className="text-xs text-red mb-4">
-            ⚠ {!malSaved && 'Client ID'}{!malSaved && !malSecretSaved && ' + '}{!malSecretSaved && 'Client Secret'} not saved — Connect MAL will fail.
+            ⚠ Client ID not saved — Connect MAL will fail.
           </div>
         )}
 
@@ -249,7 +247,7 @@ export default function Settings() {
         ) : (
           <button
             onClick={connectMal}
-            disabled={!malSaved || !malSecretSaved}
+            disabled={!malSaved}
             className="btn btn-primary disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Connect MAL

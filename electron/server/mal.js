@@ -8,12 +8,15 @@ const { malRedirectUri } = require('../oauth');
 const MAL_BASE = 'https://api.myanimelist.net/v2';
 const MAL_AUTH = 'https://myanimelist.net/v1/oauth2';
 
+// MAL's PKCE implementation only supports code_challenge_method=plain.
+// The challenge must equal the verifier as-is (no SHA-256 hashing).
+// This is a MAL-specific quirk — standard OAuth 2.0 recommends S256,
+// but MAL rejects S256 challenges with a generic "redirect URI" error
+// at token exchange that is incredibly misleading.
+// Per MAL API v2 docs: "code_challenge_method: Only 'plain' is supported."
 function generateVerifier() {
-  return crypto.randomBytes(32).toString('base64url');
-}
-
-function generateChallenge(verifier) {
-  return crypto.createHash('sha256').update(verifier).digest('base64url');
+  // PKCE verifier must be 43–128 chars of [A-Z a-z 0-9 . _ ~ -]
+  return crypto.randomBytes(48).toString('base64url').slice(0, 64);
 }
 
 function getAuthUrl(userId) {
@@ -21,20 +24,18 @@ function getAuthUrl(userId) {
   if (!clientId || !clientId.trim()) {
     throw new Error(
       'MAL_CLIENT_ID_MISSING: Save your MAL Client ID in Settings before connecting. ' +
-      'Get one free at myanimelist.net/apiconfig — App Type: Web, ' +
-      'App Redirect URL: nstreams://mal-callback'
+      'Get one free at myanimelist.net/apiconfig'
     );
   }
 
   const verifier = generateVerifier();
-  const challenge = generateChallenge(verifier);
   store.set(`mal_verifier_${userId}`, verifier);
 
   const params = new URLSearchParams({
     response_type: 'code',
     client_id: clientId.trim(),
-    code_challenge: challenge,
-    code_challenge_method: 'S256',
+    code_challenge: verifier,          // plain method: challenge = verifier
+    code_challenge_method: 'plain',    // MAL only supports plain
     redirect_uri: malRedirectUri()
   });
   return `${MAL_AUTH}/authorize?${params}`;
@@ -46,12 +47,6 @@ async function exchangeCode(code, userId) {
   const clientSecret = store.get('mal_client_secret');
 
   if (!clientId) throw new Error('MAL_CLIENT_ID_MISSING');
-  if (!clientSecret) {
-    throw new Error(
-      'MAL_CLIENT_SECRET_MISSING: MAL requires your Client Secret for the token exchange. ' +
-      'Copy it from your MAL app page at myanimelist.net/apiconfig and paste into Settings.'
-    );
-  }
   if (!verifier) {
     throw new Error(
       'MAL_VERIFIER_LOST: Auth session expired (did you restart the app mid-OAuth?). ' +
@@ -59,18 +54,24 @@ async function exchangeCode(code, userId) {
     );
   }
 
+  // Build token request. Client Secret is REQUIRED for "Web" app type
+  // and NOT ISSUED for "Other" app type. Include it only if saved.
+  const body = {
+    client_id: String(clientId).trim(),
+    grant_type: 'authorization_code',
+    code,
+    redirect_uri: malRedirectUri(),
+    code_verifier: verifier
+  };
+  if (clientSecret && String(clientSecret).trim()) {
+    body.client_secret = String(clientSecret).trim();
+  }
+
   let res;
   try {
     res = await axios.post(
       `${MAL_AUTH}/token`,
-      new URLSearchParams({
-        client_id: String(clientId).trim(),
-        client_secret: String(clientSecret).trim(),
-        grant_type: 'authorization_code',
-        code,
-        redirect_uri: malRedirectUri(),
-        code_verifier: verifier
-      }),
+      new URLSearchParams(body),
       { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
     );
   } catch (e) {
