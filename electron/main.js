@@ -1,3 +1,26 @@
+// Polyfill File for Node < 20 (Electron 28 ships Node 18.18).
+// Some cheerio/undici/fetch-blob code paths reference globalThis.File
+// at module load and crash without it.
+if (typeof globalThis.File === 'undefined') {
+  try {
+    const { File } = require('node:buffer');
+    if (File) globalThis.File = File;
+    else throw new Error('no-File');
+  } catch {
+    globalThis.File = class File {
+      constructor(parts, name, options = {}) {
+        this.name = name;
+        this.lastModified = options.lastModified || Date.now();
+        this.type = options.type || '';
+        this._parts = parts || [];
+      }
+    };
+  }
+}
+if (typeof globalThis.Blob === 'undefined') {
+  try { globalThis.Blob = require('node:buffer').Blob; } catch {}
+}
+
 const { app, BrowserWindow, shell, ipcMain, session, dialog } = require('electron');
 const path = require('path');
 const https = require('https');
