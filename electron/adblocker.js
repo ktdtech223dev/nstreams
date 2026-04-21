@@ -12,6 +12,34 @@ let blocker = null;
 let enabled = true;
 const trackedSessions = new Set();
 
+// Premium streaming services depend on tracking/ad domains for their
+// login + playback flows (Amazon pulls auth from amazon-adsystem, Netflix
+// ships code via nflxso, etc.). Adblock breaks them — we auto-skip for
+// anything matching these hosts.
+const PREMIUM_HOSTS = [
+  'amazon.com', 'primevideo.com', 'amazon-adsystem.com', 'a2z.com', 'ssl-images-amazon.com', 'media-amazon.com',
+  'netflix.com', 'nflximg.net', 'nflxext.com', 'nflxvideo.net', 'nflxso.net',
+  'hulu.com', 'hulustream.com', 'huluim.com',
+  'disneyplus.com', 'disney-plus.net', 'dssott.com', 'bamgrid.com',
+  'max.com', 'play.max.com', 'hbomax.com',
+  'crunchyroll.com', 'crunchyrollsvc.com',
+  'peacocktv.com', 'nbc.com',
+  'paramountplus.com', 'cbs.com', 'cbsaavideo.com',
+  'tv.apple.com', 'apple.com', 'itunes.apple.com', 'mzstatic.com',
+  'youtube.com', 'youtu.be', 'googlevideo.com', 'ytimg.com', 'ggpht.com',
+  'tubitv.com', 'adrise.tv',
+  'pluto.tv',
+  'funimation.com', 'hidive.com'
+];
+
+function isPremiumUrl(url) {
+  try {
+    const u = new URL(url);
+    const h = u.hostname.toLowerCase();
+    return PREMIUM_HOSTS.some(p => h === p || h.endsWith('.' + p));
+  } catch { return false; }
+}
+
 async function init(userDataPath) {
   if (blocker) return blocker;
   const cacheDir = path.join(userDataPath, 'adblocker-cache');
@@ -61,4 +89,4 @@ function enable() {
 
 function isEnabled() { return enabled && !!blocker; }
 
-module.exports = { init, enableFor, disable, enable, isEnabled };
+module.exports = { init, enableFor, disable, enable, isEnabled, isPremiumUrl };

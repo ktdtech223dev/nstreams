@@ -111,6 +111,18 @@ ipcMain.handle('set-active-user', (_, id) => store.set('active_user_id', id));
 ipcMain.handle('watch-in-app', async (_, { url, title, sessionId, partyId }) => {
   const partition = 'persist:nstreams-viewer';
 
+  // Premium services (Amazon/Netflix/Disney/etc.) depend on tracker
+  // domains that the adblocker would otherwise kill. Toggle the shared
+  // viewer partition's blocker based on the current URL.
+  if (store.get('adblock_enabled', true) && adblocker.isEnabled()) {
+    if (adblocker.isPremiumUrl(url)) {
+      adblocker.disable();
+      console.log('[viewer] adblock disabled for premium service:', new URL(url).hostname);
+    } else {
+      adblocker.enable();
+    }
+  }
+
   // Ensure we have a user-agent that looks like Chrome so services
   // don't reject the session as unsupported.
   const viewerSession = session.fromPartition(partition);
@@ -138,13 +150,26 @@ ipcMain.handle('watch-in-app', async (_, { url, title, sessionId, partyId }) => 
     }
   });
 
-  // Nuke every popup attempt by default — how most scraper-site ads fire.
-  // Keeps the viewer window quiet. User can switch to "Open externally"
-  // if a legit feature needs a popup (login flows, trailer previews etc.).
-  viewer.webContents.setWindowOpenHandler(({ url: targetUrl, disposition }) => {
-    // Allow about:blank handshakes some sites use internally
+  // Nuke every popup attempt from scraper-site ads. For premium services
+  // (Amazon sign-in captcha, Netflix 2FA etc.), allow popups that stay
+  // on the same top-level domain as what we loaded.
+  const viewerHost = (() => { try { return new URL(url).hostname; } catch { return ''; } })();
+  const premiumHost = adblocker.isPremiumUrl(url);
+
+  viewer.webContents.setWindowOpenHandler(({ url: targetUrl }) => {
     if (targetUrl === 'about:blank') return { action: 'allow' };
-    // Block everything else. Emit to main window so we can toast it.
+
+    // For premium services: allow popups on the same parent domain
+    if (premiumHost) {
+      try {
+        const t = new URL(targetUrl).hostname;
+        const sameRoot = t === viewerHost ||
+          t.endsWith('.' + viewerHost.split('.').slice(-2).join('.')) ||
+          viewerHost.endsWith('.' + t.split('.').slice(-2).join('.'));
+        if (sameRoot) return { action: 'allow' };
+      } catch {}
+    }
+
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('viewer-popup-blocked', { url: targetUrl });
     }
@@ -440,11 +465,13 @@ party.registerIpc({
 });
 
 app.whenReady().then(async () => {
-  // Initialize ad/tracker blocker (non-blocking — app still runs if it fails)
+  // Initialize ad/tracker blocker — applied only to the viewer partition
+  // (the main window doesn't need it, it serves our own UI). Per-window
+  // URL is inspected at watchInApp time to auto-disable for premium
+  // streaming services whose auth flows depend on the blocked domains.
   const adblockEnabled = store.get('adblock_enabled', true);
   if (adblockEnabled) {
     adblocker.init(app.getPath('userData')).then(() => {
-      adblocker.enableFor(session.defaultSession);
       adblocker.enableFor(session.fromPartition('persist:nstreams-viewer'));
     });
   }
