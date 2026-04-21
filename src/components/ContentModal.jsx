@@ -84,12 +84,20 @@ export default function ContentModal({ contentId, onClose }) {
         site_id: siteId
       });
       if (inApp && window.electron?.watchInApp) {
+        // Pre-warn for known DRM services — playback often fails without
+        // a castlabs-signed build. The in-viewer "Open externally" button
+        // highlights gold if we detect the failure.
+        const drmServices = /netflix|hulu|disney|max|prime|crunchyroll|peacock|paramount|apple tv|funimation|hidive/i;
+        if (drmServices.test(siteName || '') || drmServices.test(url)) {
+          showToast(`⚠ ${siteName || 'Service'} requires DRM — if playback fails, click "Open in browser" top-right`);
+        } else {
+          showToast(`Playing ${siteName || ''} inside N Streams`);
+        }
         await window.electron.watchInApp({
           url,
           title: `${title || content.title} · ${siteName || ''}`.trim(),
           sessionId: s.session_id
         });
-        showToast(`Playing ${siteName || ''} inside N Streams`);
       } else if (window.electron) {
         await window.electron.openUrl(url);
         showToast('Opened in browser — come back when done!');

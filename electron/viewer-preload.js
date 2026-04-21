@@ -152,6 +152,109 @@ if (document.readyState === 'loading') {
   boot();
 }
 
+// ─── Escape hatch: "Open in real browser" button ───────────────
+// Always-visible floating button in the top-right. Highlights gold when
+// we detect DRM playback failures so user can fall back to the browser.
+let escapeBtn = null;
+let escapeBtnAlerted = false;
+
+// Known DRM-failure patterns across services
+const DRM_FAILURE_PATTERNS = [
+  /KAT-?\d+/i,                            // Crunchyroll (KAT-6005 etc)
+  /widevine/i,
+  /drm error|drm failed|drm failure/i,
+  /playback error|not available|we can'?t play/i,
+  /error code[: ]*S?7\d{2,3}/i,           // Netflix
+  /error code[: ]*UI-\d+/i,                // HBO Max / Disney+
+  /error code[: ]*83\d{2}/i,               // Amazon Prime
+  /error code[: ]*m7\d{3}/i,               // Netflix
+  /error code[: ]*B\d{2,3}-\d+/i           // Generic
+];
+
+function injectEscapeButton() {
+  injectStyles();
+  // Extra styles for escape button
+  if (!document.getElementById('nstreams-escape-css')) {
+    const s = document.createElement('style');
+    s.id = 'nstreams-escape-css';
+    s.textContent = `
+      #nstreams-escape-btn {
+        position: fixed; top: 12px; right: 12px; z-index: 2147483646;
+        background: rgba(30,30,53,0.85); color: white;
+        padding: 8px 14px; border-radius: 999px;
+        font: 600 12px/1 system-ui, sans-serif; cursor: pointer;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+        border: 1px solid rgba(99,102,241,0.5);
+        backdrop-filter: blur(12px);
+        transition: all 0.2s ease;
+        user-select: none;
+      }
+      #nstreams-escape-btn:hover {
+        background: rgba(99,102,241,0.95);
+        transform: scale(1.04);
+      }
+      #nstreams-escape-btn.alert {
+        background: rgba(245,158,11,0.95);
+        border-color: rgba(245,158,11,1);
+        animation: ns-alert 1.5s infinite;
+      }
+      @keyframes ns-alert {
+        0%,100% { box-shadow: 0 0 10px rgba(245,158,11,0.5); }
+        50%     { box-shadow: 0 0 25px rgba(245,158,11,1); }
+      }
+    `;
+    document.documentElement.appendChild(s);
+  }
+
+  if (document.getElementById('nstreams-escape-btn')) return;
+  escapeBtn = document.createElement('div');
+  escapeBtn.id = 'nstreams-escape-btn';
+  escapeBtn.textContent = '🌐 Open in browser';
+  escapeBtn.title = 'Open the current page in your default browser — use this if video playback fails inside N Streams';
+  escapeBtn.onclick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    ipcRenderer.send('viewer:open-externally');
+  };
+  document.documentElement.appendChild(escapeBtn);
+}
+
+function flagEscapeAlert(reason) {
+  if (!escapeBtn || escapeBtnAlerted) return;
+  escapeBtnAlerted = true;
+  escapeBtn.classList.add('alert');
+  escapeBtn.textContent = '⚠ Playback failed — open externally';
+  console.log('[NStreams] DRM playback failure detected:', reason);
+}
+
+function scanForDrmFailure() {
+  try {
+    const text = document.body?.innerText || '';
+    if (!text) return;
+    for (const pat of DRM_FAILURE_PATTERNS) {
+      const m = text.match(pat);
+      if (m) return flagEscapeAlert(m[0]);
+    }
+  } catch {}
+}
+
+// Inject after the page has a body
+function bootEscape() {
+  injectEscapeButton();
+  setInterval(scanForDrmFailure, 2500);
+  // Also listen for video errors from our existing <video> hooks
+  setInterval(() => {
+    if (currentVideo && currentVideo.error) {
+      flagEscapeAlert(`video.error code ${currentVideo.error.code}`);
+    }
+  }, 2000);
+}
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', bootEscape);
+} else {
+  bootEscape();
+}
+
 // ─── Visual: party badge + floating reactions + overlay ──────
 function injectStyles() {
   if (document.getElementById('nstreams-party-css')) return;

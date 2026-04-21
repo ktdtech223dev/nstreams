@@ -280,6 +280,18 @@ ipcMain.handle('open-user-data-folder', () => {
   shell.openPath(app.getPath('userData'));
 });
 
+// Viewer escape hatch — open current page in real browser + close viewer
+ipcMain.on('viewer:open-externally', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win) return;
+  const currentUrl = win.webContents.getURL();
+  shell.openExternal(currentUrl);
+  win.close();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('viewer-escaped', { url: currentUrl });
+  }
+});
+
 ipcMain.handle('adblock-status', () => ({
   enabled: adblocker.isEnabled(),
   setting: store.get('adblock_enabled', true)

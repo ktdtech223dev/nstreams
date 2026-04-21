@@ -1,6 +1,6 @@
 {
   "name": "nstreams",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "description": "N Streams — desktop streaming hub for the N Games crew",
   "main": "electron/main.js",
   "scripts": {

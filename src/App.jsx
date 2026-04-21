@@ -56,6 +56,9 @@ export default function App() {
     window.electron.onPopupBlocked(() => {
       showToast('🛡 Popup blocked');
     });
+    window.electron?.onViewerEscaped?.(() => {
+      showToast('Opened in your default browser ↗');
+    });
   }, []);
 
   useEffect(() => {

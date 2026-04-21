@@ -36,6 +36,7 @@ contextBridge.exposeInMainWorld('electron', {
   viewerLinkedDomains: (domains) => ipcRenderer.invoke('viewer-linked-domains', domains),
   onViewerClosed: (cb) => ipcRenderer.on('viewer-closed', (_, data) => cb(data)),
   onPopupBlocked: (cb) => ipcRenderer.on('viewer-popup-blocked', (_, data) => cb(data)),
+  onViewerEscaped: (cb) => ipcRenderer.on('viewer-escaped', (_, data) => cb(data)),
   adblockStatus: () => ipcRenderer.invoke('adblock-status'),
   adblockToggle: (on) => ipcRenderer.invoke('adblock-toggle', on),
 

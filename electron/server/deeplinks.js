@@ -60,7 +60,9 @@ const DRM_SERVICES = new Set([
   'netflix', 'hulu', 'disney+', 'disney plus', 'max', 'hbo max',
   'prime video', 'amazon prime video', 'amazon prime',
   'peacock', 'paramount+', 'paramount plus', 'apple tv+', 'apple tv plus',
-  'starz', 'showtime', 'discovery+', 'funimation', 'hidive',
+  'starz', 'showtime', 'discovery+',
+  'crunchyroll',                    // KAT-6005 = Widevine required on all tiers
+  'funimation', 'hidive',
   'amc+', 'britbox', 'mubi'
 ]);
 
