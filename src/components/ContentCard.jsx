@@ -37,7 +37,17 @@ export default function ContentCard({ item, onClick, edge }) {
 
   function quickPlay(e) {
     e.stopPropagation();
-    // Open content modal — user can then pick a source
+    // If we know where they last watched this, jump straight to the player
+    if (item.last_site_url) {
+      openPlayer({
+        url: item.last_site_url,
+        title: title,
+        contentId,
+        watchlistId: item.id
+      });
+      return;
+    }
+    // Otherwise open the modal so they can pick a source
     openContent(contentId);
   }
 

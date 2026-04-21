@@ -149,6 +149,11 @@ function migrate() {
     db.exec('ALTER TABLE watchlist ADD COLUMN last_site_url TEXT');
   }
 
+  const contentCols = db.prepare("PRAGMA table_info(content)").all().map(c => c.name);
+  if (!contentCols.includes('seasons')) {
+    db.exec('ALTER TABLE content ADD COLUMN seasons TEXT'); // JSON: [{season_number, episode_count, name, poster_path}, ...]
+  }
+
   db.exec(`
     CREATE TABLE IF NOT EXISTS scrape_blacklist (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

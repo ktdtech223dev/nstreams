@@ -60,8 +60,49 @@ export default function EpisodeTracker({ content, wl, update, onAdvance }) {
     }
   }
 
-  function pickEpisode(ep) {
-    update({ current_season: season, current_episode: ep.episode_number });
+  // Parse the seasons array (stored as JSON on content) once
+  const seasonsMeta = React.useMemo(() => {
+    if (!content.seasons) return null;
+    try { return JSON.parse(content.seasons); } catch { return null; }
+  }, [content.seasons]);
+
+  function cumulativeCountThrough(seasonN, episodeN) {
+    if (seasonsMeta && seasonsMeta.length) {
+      const prior = seasonsMeta
+        .filter(s => s.season_number < seasonN)
+        .reduce((n, s) => n + (s.episode_count || 0), 0);
+      return prior + episodeN;
+    }
+    // Proportional fallback if seasons metadata hasn't been backfilled
+    if (totalEp && totalSeasons) {
+      const avg = Math.round(totalEp / totalSeasons);
+      return (seasonN - 1) * avg + episodeN;
+    }
+    return episodeN;
+  }
+
+  async function pickEpisode(ep) {
+    const cumulative = cumulativeCountThrough(season, ep.episode_number);
+    const priorCount = cumulative - 1; // episodes watched BEFORE this one
+
+    // If this implies marking ≥ 5 previous episodes as watched,
+    // show a confirmation toast via update's onComplete
+    await update({
+      current_season: season,
+      current_episode: ep.episode_number,
+      total_watched_episodes: cumulative,
+      watch_status: 'watching'
+    });
+  }
+
+  async function markCompleteThroughHere(ep) {
+    const cumulative = cumulativeCountThrough(season, ep.episode_number);
+    await update({
+      current_season: season,
+      current_episode: ep.episode_number,
+      total_watched_episodes: cumulative,
+      watch_status: (totalEp && cumulative >= totalEp) ? 'completed' : 'watching'
+    });
   }
 
   return (
@@ -115,6 +156,24 @@ export default function EpisodeTracker({ content, wl, update, onAdvance }) {
       {error && (
         <div className="surface rounded-xl p-4 text-red text-sm">
           Failed to load episodes: {error}
+        </div>
+      )}
+
+      {/* Bulk action: mark all prior seasons watched */}
+      {seasonsMeta && season > 1 && (
+        <div className="flex items-center gap-2 py-2 px-3 surface rounded-xl text-xs">
+          <span className="text-muted">Already watched previous seasons?</span>
+          <button
+            onClick={() => update({
+              current_season: season,
+              current_episode: 0,
+              total_watched_episodes: cumulativeCountThrough(season, 0),
+              watch_status: 'watching'
+            })}
+            className="btn btn-ghost text-xs px-3 py-1"
+          >
+            ✓ Mark Seasons 1–{season - 1} as complete
+          </button>
         </div>
       )}
 
@@ -205,6 +264,19 @@ export default function EpisodeTracker({ content, wl, update, onAdvance }) {
                   )}
                   {!ep.overview && (
                     <p className="text-sm text-muted italic">No description available.</p>
+                  )}
+                </div>
+
+                {/* Hover actions */}
+                <div className="shrink-0 opacity-0 group-hover:opacity-100 transition flex flex-col gap-1.5 self-center">
+                  {!isCurrent && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); markCompleteThroughHere(ep); }}
+                      className="btn btn-ghost text-[10px] px-2 py-1 whitespace-nowrap"
+                      title={`Mark this and all previous episodes as watched (${cumulativeCountThrough(season, ep.episode_number)} total)`}
+                    >
+                      <Check size={11} /> Up to here
+                    </button>
                   )}
                 </div>
               </div>

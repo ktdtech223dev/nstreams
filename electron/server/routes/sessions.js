@@ -4,14 +4,45 @@ const { getDB } = require('../database');
 const router = express.Router();
 
 // POST /api/sessions/start
+// Also ensures the user has a watchlist row (creates with status='watching'
+// if missing, bumps plan_to_watch→watching if present), and saves the
+// URL they're watching as the last source so we can default to it next time.
 router.post('/sessions/start', (req, res) => {
   try {
-    const { user_id, content_id, site_id } = req.body;
+    const { user_id, content_id, site_id, site_url } = req.body;
     const db = getDB();
 
-    const w = db.prepare(
+    let w = db.prepare(
       'SELECT * FROM watchlist WHERE user_id = ? AND content_id = ?'
     ).get(user_id, content_id);
+
+    if (!w) {
+      // Insert a fresh watchlist row and mark as watching
+      const wlInfo = db.prepare(`
+        INSERT INTO watchlist
+          (user_id, content_id, watch_status, current_season, current_episode,
+           source, last_site_url, updated_at)
+        VALUES (?, ?, 'watching', 1, 0, 'manual', ?, CURRENT_TIMESTAMP)
+      `).run(user_id, content_id, site_url || null);
+      w = db.prepare('SELECT * FROM watchlist WHERE id = ?').get(wlInfo.lastInsertRowid);
+      // Log the implicit add
+      db.prepare(`
+        INSERT INTO activity_feed (user_id, content_id, activity_type, metadata)
+        VALUES (?, ?, 'added_to_watchlist', ?)
+      `).run(user_id, content_id, JSON.stringify({ watch_status: 'watching', implicit: true }));
+    } else {
+      // Bump status to 'watching' if it was plan_to_watch or null.
+      // Leave 'completed', 'on_hold', 'dropped' alone — those are deliberate.
+      const bumpStatus = (!w.watch_status || w.watch_status === 'plan_to_watch');
+      db.prepare(`
+        UPDATE watchlist SET
+          ${bumpStatus ? "watch_status = 'watching'," : ''}
+          last_site_url = COALESCE(?, last_site_url),
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(site_url || null, w.id);
+      w = db.prepare('SELECT * FROM watchlist WHERE id = ?').get(w.id);
+    }
 
     const info = db.prepare(`
       INSERT INTO watching_sessions
@@ -19,8 +50,8 @@ router.post('/sessions/start', (req, res) => {
       VALUES (?, ?, ?, ?, ?)
     `).run(
       user_id, content_id, site_id || null,
-      w ? w.current_episode : 0,
-      w ? w.current_season : 1
+      w.current_episode || 0,
+      w.current_season || 1
     );
 
     db.prepare(`
@@ -28,7 +59,12 @@ router.post('/sessions/start', (req, res) => {
       VALUES (?, ?, 'started_watching', ?)
     `).run(user_id, content_id, JSON.stringify({ site_id }));
 
-    res.json({ session_id: info.lastInsertRowid });
+    res.json({
+      session_id: info.lastInsertRowid,
+      watchlist_id: w.id,
+      watch_status: w.watch_status,
+      last_site_url: w.last_site_url
+    });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

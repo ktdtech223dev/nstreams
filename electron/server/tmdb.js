@@ -95,6 +95,17 @@ function formatDetails(data, type) {
     total_seasons: data.number_of_seasons,
     total_episodes: data.number_of_episodes,
     status: data.status,
+    seasons: JSON.stringify(
+      (data.seasons || [])
+        .filter(s => s.season_number > 0)
+        .map(s => ({
+          season_number: s.season_number,
+          name: s.name,
+          episode_count: s.episode_count,
+          air_date: s.air_date,
+          poster_path: s.poster_path ? `${IMG}w185${s.poster_path}` : null
+        }))
+    ),
     mal_id: data.external_ids?.myanimelist_id || null,
     is_anime: data.external_ids?.myanimelist_id ? 1 : 0
   };

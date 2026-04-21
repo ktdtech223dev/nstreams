@@ -33,14 +33,14 @@ router.post('/content', async (req, res) => {
       INSERT INTO content
         (tmdb_id, mal_id, title, type, poster_path, backdrop_path,
          overview, release_year, rating, genres, cast_list,
-         total_seasons, total_episodes, status, is_anime, added_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         total_seasons, total_episodes, status, is_anime, added_by, seasons)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       details.tmdb_id, details.mal_id, details.title, details.type,
       details.poster_path, details.backdrop_path, details.overview,
       details.release_year, details.rating, details.genres,
       details.cast_list, details.total_seasons, details.total_episodes,
-      details.status, details.is_anime, user_id
+      details.status, details.is_anime, user_id, details.seasons
     );
 
     content = db.prepare('SELECT * FROM content WHERE id = ?').get(info.lastInsertRowid);
@@ -81,6 +81,18 @@ router.get('/content/:id', async (req, res) => {
 
     const content = db.prepare('SELECT * FROM content WHERE id = ?').get(id);
     if (!content) return res.status(404).json({ error: 'Not found' });
+
+    // Back-fill seasons if this row predates the column migration and
+    // we have a tmdb_id. One-shot per content.
+    if (!content.seasons && content.tmdb_id && content.type !== 'movie') {
+      try {
+        const details = await tmdb.getDetails(content.tmdb_id, 'tv');
+        if (details.seasons) {
+          db.prepare('UPDATE content SET seasons = ? WHERE id = ?').run(details.seasons, id);
+          content.seasons = details.seasons;
+        }
+      } catch (_) {}
+    }
 
     let watchlist = null;
     if (user_id) {

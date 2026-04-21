@@ -105,8 +105,11 @@ export default function ContentModal({ contentId, onClose }) {
       const s = await api.startSession({
         user_id: activeUserId,
         content_id: contentId,
-        site_id: siteId
+        site_id: siteId,
+        site_url: url
       });
+      // Refresh local content so UI reflects the new 'watching' status
+      api.getContent(contentId, activeUserId).then(setContent).catch(() => {});
       if (inApp && window.electron?.player) {
         const drmServices = /netflix|hulu|disney|max|prime|crunchyroll|peacock|paramount|apple tv|funimation|hidive/i;
         if (drmServices.test(siteName || '') || drmServices.test(url)) {
@@ -116,7 +119,7 @@ export default function ContentModal({ contentId, onClose }) {
           url,
           title: `${title || content.title} · ${siteName || ''}`.trim(),
           contentId,
-          watchlistId: wl?.id,
+          watchlistId: s.watchlist_id || wl?.id,
           siteId
         });
         // ContentModal auto-closes in openPlayer()
@@ -235,6 +238,7 @@ export default function ContentModal({ contentId, onClose }) {
             <WhereToWatchTab
               data={where}
               scraped={scraped}
+              wl={wl}
               onWatch={watchNow}
               contentId={contentId}
               onLinkOpen={() => setLinkOpen(true)}
@@ -358,7 +362,7 @@ function OverviewTab({ content, wl, update, cast }) {
   );
 }
 
-function WhereToWatchTab({ data, scraped, onWatch, contentId, onLinkOpen }) {
+function WhereToWatchTab({ data, scraped, wl, onWatch, contentId, onLinkOpen }) {
   const { activeUserId, showToast } = useApp();
 
   async function hideScraped(r) {
@@ -404,9 +408,40 @@ function WhereToWatchTab({ data, scraped, onWatch, contentId, onLinkOpen }) {
     );
   }
 
+  // If the user has a last_site_url, compute a nice label for it
+  const lastUrl = wl?.last_site_url;
+  let lastSourceLabel = null;
+  if (lastUrl) {
+    try {
+      const h = new URL(lastUrl).hostname.replace(/^www\./, '');
+      lastSourceLabel = h.split('.')[0]
+        .replace(/^./, c => c.toUpperCase());
+    } catch {}
+  }
+
   return (
     <div className="space-y-8">
-      {/* SCRAPED AVAILABILITY — Consumet lookup across aggregator sites */}
+      {/* CONTINUE banner — surfaces the last source they watched on */}
+      {lastUrl && lastSourceLabel && (
+        <div className="surface-elevated rounded-2xl p-4 flex items-center gap-4 glow border-accent/40">
+          <div className="w-12 h-12 rounded-full bg-accent/20 flex items-center justify-center shrink-0">
+            <span className="text-xl">▶</span>
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[10px] uppercase tracking-[.15em] text-accent font-bold">Continue on</div>
+            <div className="text-white font-semibold truncate">{lastSourceLabel}</div>
+            <div className="text-xs text-muted truncate">Last watched · {lastUrl}</div>
+          </div>
+          <button
+            onClick={() => onWatch(null, lastUrl, { inApp: true, siteName: lastSourceLabel })}
+            className="btn btn-primary btn-hero shrink-0"
+          >
+            ▶ Resume
+          </button>
+        </div>
+      )}
+
+      {/* SCRAPED AVAILABILITY — local resolver across aggregator sites */}
       <div>
         <h3 className="font-display text-xl text-white mb-1">
           Found on Aggregators {scraped?.results?.length > 0 && (

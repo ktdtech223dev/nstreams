@@ -76,6 +76,19 @@ export default function Hero() {
 
   function watchNow() {
     if (!featured || featured._tmdbOnly) { openContent(featured?.id); return; }
+
+    // Prefer the last source the user watched this show on
+    const lastUrl = featured.watchlist?.last_site_url;
+    if (lastUrl) {
+      openPlayer({
+        url: lastUrl,
+        title: featured.title,
+        contentId: featured.id,
+        watchlistId: featured.watchlist?.id
+      });
+      return;
+    }
+
     const first = where?.crew_links?.[0] || where?.tmdb_providers?.find(p => p.site_in_catalog);
     if (first?.deep_link || first?.site_in_catalog?.url) {
       openPlayer({
