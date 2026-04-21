@@ -19,7 +19,7 @@ const STATUSES = [
 ];
 
 export default function ContentModal({ contentId, onClose }) {
-  const { activeUserId, users, showToast, refreshSessions, openWatchParty } = useApp();
+  const { activeUserId, users, showToast, refreshSessions, openWatchParty, openPlayer } = useApp();
   const [content, setContent] = useState(null);
   const [tab, setTab] = useState('overview');
   const [where, setWhere] = useState(null);
@@ -53,6 +53,18 @@ export default function ContentModal({ contentId, onClose }) {
         .catch(e => setScraped({ loading: false, results: [], error: e.message }));
     }
   }, [tab, content]);
+
+  useEffect(() => {
+    // Re-fetch scraped after user hides a bad match
+    const h = (e) => {
+      if (String(e.detail?.contentId) !== String(contentId)) return;
+      api.scrapeAvailability(contentId)
+        .then(d => setScraped({ loading: false, results: d.results || [], data: d }))
+        .catch(() => {});
+    };
+    window.addEventListener('nstreams:rescrape', h);
+    return () => window.removeEventListener('nstreams:rescrape', h);
+  }, [contentId]);
 
   if (loading || !content) {
     return (
@@ -91,21 +103,19 @@ export default function ContentModal({ contentId, onClose }) {
         content_id: contentId,
         site_id: siteId
       });
-      if (inApp && window.electron?.watchInApp) {
-        // Pre-warn for known DRM services — playback often fails without
-        // a castlabs-signed build. The in-viewer "Open externally" button
-        // highlights gold if we detect the failure.
+      if (inApp && window.electron?.player) {
         const drmServices = /netflix|hulu|disney|max|prime|crunchyroll|peacock|paramount|apple tv|funimation|hidive/i;
         if (drmServices.test(siteName || '') || drmServices.test(url)) {
           showToast(`⚠ ${siteName || 'Service'} requires DRM — if playback fails, click "Open in browser" top-right`);
-        } else {
-          showToast(`Playing ${siteName || ''} inside N Streams`);
         }
-        await window.electron.watchInApp({
+        openPlayer({
           url,
           title: `${title || content.title} · ${siteName || ''}`.trim(),
-          sessionId: s.session_id
+          contentId,
+          watchlistId: wl?.id,
+          siteId
         });
+        // ContentModal auto-closes in openPlayer()
       } else if (window.electron) {
         await window.electron.openUrl(url);
         showToast('Opened in browser — come back when done!');
@@ -340,6 +350,25 @@ function OverviewTab({ content, wl, update, cast }) {
 }
 
 function WhereToWatchTab({ data, scraped, onWatch, contentId, onLinkOpen }) {
+  const { activeUserId, showToast } = useApp();
+
+  async function hideScraped(r) {
+    try {
+      await api.hideScrapeResult({
+        content_id: contentId,
+        provider: r.provider,
+        site_url: r.site_url,
+        user_id: activeUserId
+      });
+      showToast(`Hidden: ${r.provider_name}`);
+      // Reload scraped list — parent will re-fetch on next tab open, but
+      // for immediacy we just emit a custom event the ContentModal can pick up
+      window.dispatchEvent(new CustomEvent('nstreams:rescrape', { detail: { contentId } }));
+    } catch (e) {
+      showToast('Failed to hide: ' + e.message);
+    }
+  }
+
   if (!data) return <div className="text-muted">Loading...</div>;
 
   const hasElectron = !!window.electron?.watchInApp;
@@ -395,30 +424,40 @@ function WhereToWatchTab({ data, scraped, onWatch, contentId, onLinkOpen }) {
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
             {scraped.results.map(r => (
-              <button
-                key={`${r.provider}-${r.id}`}
-                onClick={() => onWatch(null, r.site_url, { inApp: true, siteName: r.provider_name })}
-                className="bg-bg3 border border-border hover:border-accent rounded-lg p-3 text-left flex items-center gap-2 transition group"
-                title={`${r.title} on ${r.provider_name}`}
+              <div
+                key={`${r.provider}-${r.site_url}`}
+                className="bg-bg3 border border-border hover:border-accent rounded-lg p-3 flex items-center gap-2 transition group relative"
               >
-                {r.image && (
-                  <img
-                    src={r.image}
-                    className="w-10 h-14 rounded object-cover shrink-0"
-                    alt=""
-                    onError={e => { e.currentTarget.style.display = 'none'; }}
-                  />
-                )}
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm text-white truncate group-hover:text-accent transition">
-                    {r.provider_name}
+                <button
+                  onClick={() => onWatch(null, r.site_url, { inApp: true, siteName: r.provider_name })}
+                  className="flex-1 flex items-center gap-2 text-left min-w-0"
+                >
+                  {r.image && (
+                    <img
+                      src={r.image}
+                      className="w-10 h-14 rounded object-cover shrink-0"
+                      alt=""
+                      onError={e => { e.currentTarget.style.display = 'none'; }}
+                    />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm text-white truncate group-hover:text-accent transition">
+                      {r.provider_name}
+                    </div>
+                    <div className="text-xs text-muted truncate">{r.title}</div>
+                    <div className="text-[10px] text-green mt-0.5">
+                      ▶ Watch · {r.match_score}% match
+                    </div>
                   </div>
-                  <div className="text-xs text-muted truncate">{r.title}</div>
-                  <div className="text-[10px] text-green mt-0.5">
-                    ▶ Watch · {r.match_score}% match
-                  </div>
-                </div>
-              </button>
+                </button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); hideScraped(r); }}
+                  title="Wrong match? Hide this result"
+                  className="absolute top-1 right-1 w-6 h-6 rounded-full bg-bg4/80 hover:bg-red text-muted hover:text-white opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-xs"
+                >
+                  ✕
+                </button>
+              </div>
             ))}
           </div>
         )}

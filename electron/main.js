@@ -21,7 +21,7 @@ if (typeof globalThis.Blob === 'undefined') {
   try { globalThis.Blob = require('node:buffer').Blob; } catch {}
 }
 
-const { app, BrowserWindow, shell, ipcMain, session, dialog } = require('electron');
+const { app, BrowserWindow, BrowserView, shell, ipcMain, session, dialog } = require('electron');
 const path = require('path');
 const https = require('https');
 const Store = require('electron-store');
@@ -303,8 +303,170 @@ ipcMain.handle('open-user-data-folder', () => {
   shell.openPath(app.getPath('userData'));
 });
 
-// Viewer escape hatch — open current page in real browser + close viewer
+// ───────── Embedded Player (BrowserView inside main window) ─────────
+// Replaces the pop-out BrowserWindow viewer. The renderer tells us the
+// screen rect of the player slot; we stretch a BrowserView to match.
+let playerView = null;
+let playerState = {
+  url: null, title: null, partyId: null,
+  contentId: null, userId: null, watchlistId: null,
+  position: 0, duration: 0
+};
+let positionSaveTimer = null;
+
+function destroyPlayerView(savePosition = true) {
+  if (!playerView) return;
+  if (savePosition) savePlayerPosition(true);
+  try {
+    if (playerState.partyId && party.setWindows) party.setWindows(mainWindow, null);
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.removeBrowserView(playerView);
+    if (playerView.webContents && !playerView.webContents.isDestroyed()) {
+      playerView.webContents.removeAllListeners();
+      playerView.webContents.destroy();
+    }
+  } catch (e) { console.warn('[player] destroy error:', e.message); }
+  playerView = null;
+  playerState = { url: null, title: null, partyId: null, contentId: null,
+                  userId: null, watchlistId: null, position: 0, duration: 0 };
+  clearInterval(positionSaveTimer);
+  positionSaveTimer = null;
+}
+
+function savePlayerPosition(immediate = false) {
+  const { watchlistId, position, duration, url } = playerState;
+  if (!watchlistId || !position) return;
+  const db = require('./server/database').getDB();
+  try {
+    db.prepare(`
+      UPDATE watchlist SET
+        last_position_seconds = ?,
+        last_duration_seconds = ?,
+        last_site_url = ?,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(position, duration || 0, url || null, watchlistId);
+  } catch (e) { if (immediate) console.warn('[player] position save failed:', e.message); }
+}
+
+ipcMain.handle('player:open', async (_, opts) => {
+  const {
+    url, title, partyId = null,
+    contentId = null, userId = null, watchlistId = null,
+    bounds, resumeAt = 0
+  } = opts;
+
+  // If a player is already open, reuse it (just load new URL)
+  if (!playerView) {
+    const partition = 'persist:nstreams-viewer';
+    try {
+      session.fromPartition(partition).setUserAgent(
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
+      );
+    } catch {}
+
+    playerView = new BrowserView({
+      webPreferences: {
+        partition,
+        preload: path.join(__dirname, 'viewer-preload.js'),
+        contextIsolation: false,
+        nodeIntegration: false,
+        sandbox: false,
+        plugins: true,
+        webSecurity: true
+      }
+    });
+    mainWindow.addBrowserView(playerView);
+
+    // Adblock toggle per-URL
+    if (store.get('adblock_enabled', true) && adblocker.isEnabled()) {
+      if (adblocker.isPremiumUrl(url)) adblocker.disable();
+      else adblocker.enable();
+    }
+
+    // Popup handler — same rules as the old window viewer
+    const viewerHost = (() => { try { return new URL(url).hostname; } catch { return ''; } })();
+    const premium = adblocker.isPremiumUrl(url);
+    playerView.webContents.setWindowOpenHandler(({ url: targetUrl }) => {
+      if (targetUrl === 'about:blank') return { action: 'allow' };
+      if (premium) {
+        try {
+          const t = new URL(targetUrl).hostname;
+          const sameRoot = t === viewerHost ||
+            t.endsWith('.' + viewerHost.split('.').slice(-2).join('.'));
+          if (sameRoot) return { action: 'allow' };
+        } catch {}
+      }
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('viewer-popup-blocked', { url: targetUrl });
+      }
+      return { action: 'deny' };
+    });
+
+    // Position + duration heartbeat from viewer-preload
+    ipcMain.removeAllListeners('player:heartbeat');
+    ipcMain.on('player:heartbeat', (ev, payload) => {
+      if (ev.sender.id !== playerView?.webContents.id) return;
+      playerState.position = payload.current_time || 0;
+      playerState.duration = payload.duration || playerState.duration;
+    });
+  }
+
+  if (bounds) playerView.setBounds(bounds);
+
+  playerState = {
+    url, title, partyId,
+    contentId, userId, watchlistId,
+    position: resumeAt, duration: 0
+  };
+
+  // Periodic save every 10s
+  if (positionSaveTimer) clearInterval(positionSaveTimer);
+  positionSaveTimer = setInterval(() => savePlayerPosition(), 10000);
+
+  await playerView.webContents.loadURL(url);
+
+  // Once loaded + video discovered, seek to resume position if we have one
+  if (resumeAt && resumeAt > 5) {
+    playerView.webContents.once('did-finish-load', () => {
+      setTimeout(() => {
+        try {
+          playerView.webContents.send('party:apply', { action: 'play', current_time: resumeAt });
+        } catch {}
+      }, 2500);
+    });
+  }
+
+  // Wire party binding
+  if (partyId) party.setWindows(mainWindow, playerView);
+
+  return { ok: true };
+});
+
+ipcMain.handle('player:set-bounds', (_, bounds) => {
+  if (playerView && bounds) playerView.setBounds(bounds);
+});
+
+ipcMain.handle('player:close', () => {
+  destroyPlayerView(true);
+  return { ok: true };
+});
+
+ipcMain.handle('player:get-state', () => ({
+  open: !!playerView,
+  ...playerState
+}));
+
+// Legacy viewer-close escape button from preload
 ipcMain.on('viewer:open-externally', (event) => {
+  if (playerView && event.sender === playerView.webContents) {
+    const currentUrl = playerView.webContents.getURL();
+    shell.openExternal(currentUrl);
+    destroyPlayerView(true);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('viewer-escaped', { url: currentUrl });
+    }
+    return;
+  }
   const win = BrowserWindow.fromWebContents(event.sender);
   if (!win) return;
   const currentUrl = win.webContents.getURL();

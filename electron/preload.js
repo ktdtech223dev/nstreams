@@ -29,7 +29,14 @@ contextBridge.exposeInMainWorld('electron', {
   onOAuthCallback: (cb) => {
     ipcRenderer.on('oauth-callback', (_, url) => cb(url));
   },
-  // In-app viewer
+  // Embedded Player (BrowserView inside main window)
+  player: {
+    open: (opts) => ipcRenderer.invoke('player:open', opts),
+    close: () => ipcRenderer.invoke('player:close'),
+    setBounds: (bounds) => ipcRenderer.invoke('player:set-bounds', bounds),
+    getState: () => ipcRenderer.invoke('player:get-state')
+  },
+  // Legacy pop-out window (fallback; not used by default anymore)
   watchInApp: (opts) => ipcRenderer.invoke('watch-in-app', opts),
   clearViewerSession: () => ipcRenderer.invoke('clear-viewer-session'),
   clearViewerDomain: (domain) => ipcRenderer.invoke('clear-viewer-domain', domain),

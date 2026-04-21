@@ -299,4 +299,52 @@ router.post('/scrape/clear-cache', (req, res) => {
   res.json({ ok: true });
 });
 
+// POST /api/scrape/hide — hide a bad result for a specific show
+router.post('/scrape/hide', (req, res) => {
+  try {
+    const { content_id, provider, site_url, user_id } = req.body;
+    if (!content_id || !site_url) return res.status(400).json({ error: 'content_id and site_url required' });
+    getDB().prepare(`
+      INSERT OR IGNORE INTO scrape_blacklist (content_id, provider, site_url, user_id)
+      VALUES (?, ?, ?, ?)
+    `).run(content_id, provider || '', site_url, user_id || null);
+    SCRAPE_CACHE.delete(String(content_id));
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/scrape/unhide', (req, res) => {
+  try {
+    const { content_id, site_url } = req.body;
+    getDB().prepare('DELETE FROM scrape_blacklist WHERE content_id = ? AND site_url = ?').run(content_id, site_url);
+    SCRAPE_CACHE.delete(String(content_id));
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Resume position endpoints
+router.post('/watchlist/:id/position', (req, res) => {
+  try {
+    const { id } = req.params;
+    const { position, duration, site_url } = req.body;
+    getDB().prepare(`
+      UPDATE watchlist SET
+        last_position_seconds = ?,
+        last_duration_seconds = ?,
+        last_site_url = COALESCE(?, last_site_url),
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(position || 0, duration || 0, site_url || null, id);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Position by (user, content) — what the Player queries on open
+router.get('/watchlist/position/:userId/:contentId', (req, res) => {
+  const row = getDB().prepare(
+    'SELECT last_position_seconds, last_duration_seconds, last_site_url FROM watchlist WHERE user_id = ? AND content_id = ?'
+  ).get(req.params.userId, req.params.contentId);
+  res.json(row || { last_position_seconds: 0, last_duration_seconds: 0, last_site_url: null });
+});
+
 module.exports = router;

@@ -199,10 +199,17 @@ async function resolveAvailability(contentId) {
     results.push(...flix, ...sflix);
   }
 
+  // Filter out any results the user has hidden for this content
+  const hidden = new Set(
+    db.prepare('SELECT site_url FROM scrape_blacklist WHERE content_id = ?')
+      .all(contentId).map(r => r.site_url)
+  );
+  const filtered = results.filter(r => !hidden.has(r.site_url));
+
   return {
     title: content.title,
     is_anime: isAnime,
-    results
+    results: filtered
   };
 }
 

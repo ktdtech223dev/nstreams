@@ -72,14 +72,21 @@ function onSeek() {
   ipcRenderer.send('party:playback', { action: 'seek', current_time: currentVideo.currentTime });
 }
 function onTimeUpdate() {
-  if (!partyActive) return;
   const now = Date.now();
   if (now - lastHeartbeatTime < 2000) return;
   lastHeartbeatTime = now;
-  ipcRenderer.send('party:heartbeat', {
+  // Always send player heartbeat so main can save resume position
+  ipcRenderer.send('player:heartbeat', {
     current_time: currentVideo.currentTime,
+    duration: currentVideo.duration,
     playing: !currentVideo.paused
   });
+  if (partyActive) {
+    ipcRenderer.send('party:heartbeat', {
+      current_time: currentVideo.currentTime,
+      playing: !currentVideo.paused
+    });
+  }
 }
 function onRate() {
   // Ignore rate changes — don't try to sync speed

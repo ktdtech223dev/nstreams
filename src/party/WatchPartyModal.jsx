@@ -5,11 +5,12 @@ import api from '../api';
 
 // "Start / Join Watch Party" modal for a specific piece of content.
 export default function WatchPartyModal({ contentId, onClose }) {
-  const { activeUser, showToast } = useApp();
+  const { activeUser, showToast, openPlayer } = useApp();
   const { createParty, joinParty, relayUrl } = useParty();
   const [mode, setMode] = useState('create');
   const [content, setContent] = useState(null);
   const [whereToWatch, setWhereToWatch] = useState(null);
+  const [scraped, setScraped] = useState(null);
   const [siteChoice, setSiteChoice] = useState('');
   const [joinCode, setJoinCode] = useState('');
   const [busy, setBusy] = useState(false);
@@ -18,29 +19,35 @@ export default function WatchPartyModal({ contentId, onClose }) {
     if (contentId) {
       api.getContent(contentId, activeUser.id).then(setContent).catch(() => {});
       api.whereToWatch(contentId).then(setWhereToWatch).catch(() => {});
+      api.scrapeAvailability(contentId).then(setScraped).catch(() => {});
     }
   }, [contentId]);
 
-  const options = whereToWatch
-    ? [
-        ...whereToWatch.crew_links.map(l => ({
-          id: `link-${l.id}`,
-          label: `${l.name} (crew link)`,
-          url: l.deep_link,
-          site_id: l.site_id,
-          name: l.name
-        })),
-        ...whereToWatch.tmdb_providers
-          .filter(p => p.deep_link)
-          .map(p => ({
-            id: `tmdb-${p.provider_id}`,
-            label: `${p.provider_name}`,
-            url: p.deep_link,
-            site_id: p.site_in_catalog?.id,
-            name: p.provider_name
-          }))
-      ]
-    : [];
+  const options = [
+    // Scraped results first — these are direct DRM-free links
+    ...(scraped?.results || []).map(r => ({
+      id: `scrape-${r.provider}-${r.site_url}`,
+      label: `${r.provider_name} ✨ (direct, no DRM)`,
+      url: r.site_url,
+      name: r.provider_name
+    })),
+    ...(whereToWatch?.crew_links || []).map(l => ({
+      id: `link-${l.id}`,
+      label: `${l.name} (crew link)`,
+      url: l.deep_link,
+      site_id: l.site_id,
+      name: l.name
+    })),
+    ...(whereToWatch?.tmdb_providers || [])
+      .filter(p => p.deep_link)
+      .map(p => ({
+        id: `tmdb-${p.provider_id}`,
+        label: `${p.provider_name}`,
+        url: p.deep_link,
+        site_id: p.site_in_catalog?.id,
+        name: p.provider_name
+      }))
+  ];
 
   async function start() {
     if (!siteChoice) return showToast('Pick a service first');
@@ -53,11 +60,12 @@ export default function WatchPartyModal({ contentId, onClose }) {
         content: content ? { id: content.id, title: content.title, poster: content.poster_path } : null,
         site: { name: opt.name, id: opt.site_id }
       });
-      // Open viewer window bound to this party
-      await window.electron.watchInApp({
+      openPlayer({
         url: opt.url,
         title: `${content?.title} · Watch Party`,
-        partyId: p.id
+        partyId: p.id,
+        contentId: content?.id,
+        watchlistId: content?.watchlist?.id
       });
       showToast(`Party started · code: ${p.code}`);
       onClose();
@@ -84,10 +92,11 @@ export default function WatchPartyModal({ contentId, onClose }) {
           url = match?.deep_link;
         }
         if (url) {
-          await window.electron.watchInApp({
+          openPlayer({
             url,
             title: `${p.content?.title || 'Watch Party'} · joined`,
-            partyId: p.id
+            partyId: p.id,
+            contentId: p.content?.id
           });
         }
       }

@@ -7,6 +7,7 @@ import Browse from './pages/Browse';
 import Sites from './pages/Sites';
 import Crew from './pages/Crew';
 import Settings from './pages/Settings';
+import Player from './pages/Player';
 import SessionBanner from './components/SessionBanner';
 import ContentModal from './components/ContentModal';
 import { PartyProvider } from './party/PartyContext';
@@ -23,6 +24,8 @@ export default function App() {
   const [activeUserId, setActiveUserId] = useState(1);
   const [modalContentId, setModalContentId] = useState(null);
   const [partyModalContentId, setPartyModalContentId] = useState(null);
+  const [playerSession, setPlayerSession] = useState(null); // {url,title,contentId,...}
+  const [prevPage, setPrevPage] = useState('home');
   const [activeSessions, setActiveSessions] = useState([]);
   const [toast, setToast] = useState(null);
 
@@ -104,11 +107,25 @@ export default function App() {
     setTimeout(() => setToast(null), 3000);
   }
 
+  const openPlayer = (sessionObj) => {
+    setPlayerSession(sessionObj);
+    setPrevPage(page === 'player' ? prevPage : page);
+    setPage('player');
+    // Close content modal if open
+    setModalContentId(null);
+    setPartyModalContentId(null);
+  };
+  const closePlayer = () => {
+    setPlayerSession(null);
+    setPage(prevPage || 'home');
+  };
+
   const ctx = {
     users, activeUserId, activeUser, switchUser,
     openContent: (id) => setModalContentId(id),
     closeContent: () => setModalContentId(null),
     openWatchParty: (id) => setPartyModalContentId(id),
+    openPlayer, closePlayer, playerSession,
     refreshSessions,
     showToast,
     refreshUsers: async () => setUsers(await api.getUsers()),
@@ -121,7 +138,8 @@ export default function App() {
     browse: <Browse />,
     sites: <Sites />,
     crew: <Crew />,
-    settings: <Settings />
+    settings: <Settings />,
+    player: playerSession ? <Player session={playerSession} onClose={closePlayer} /> : null
   };
 
   return (
@@ -131,16 +149,22 @@ export default function App() {
           <TitleBar />
           <div className="flex flex-1 overflow-hidden">
             <Sidebar page={page} setPage={setPage} />
-            <main className="flex-1 overflow-y-auto relative">
-              {activeSessions.length > 0 && (
+            <main className={`flex-1 relative ${page === 'player' ? 'overflow-hidden' : 'overflow-y-auto'}`}>
+              {activeSessions.length > 0 && page !== 'player' && (
                 <SessionBanner
                   session={activeSessions[0]}
                   onAction={refreshSessions}
                 />
               )}
-              <div className="p-8 animate-fade" key={page}>
-                {pages[page]}
-              </div>
+              {page === 'player' ? (
+                <div className="h-full animate-fade" key={page}>
+                  {pages[page]}
+                </div>
+              ) : (
+                <div className="p-8 animate-fade" key={page}>
+                  {pages[page]}
+                </div>
+              )}
             </main>
           </div>
 

@@ -138,6 +138,29 @@ function migrate() {
   if (!siteCols.includes('search_url_template')) {
     db.exec('ALTER TABLE sites ADD COLUMN search_url_template TEXT');
   }
+  const wlCols = db.prepare("PRAGMA table_info(watchlist)").all().map(c => c.name);
+  if (!wlCols.includes('last_position_seconds')) {
+    db.exec('ALTER TABLE watchlist ADD COLUMN last_position_seconds REAL DEFAULT 0');
+  }
+  if (!wlCols.includes('last_duration_seconds')) {
+    db.exec('ALTER TABLE watchlist ADD COLUMN last_duration_seconds REAL DEFAULT 0');
+  }
+  if (!wlCols.includes('last_site_url')) {
+    db.exec('ALTER TABLE watchlist ADD COLUMN last_site_url TEXT');
+  }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS scrape_blacklist (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      content_id INTEGER REFERENCES content(id),
+      provider TEXT NOT NULL,
+      site_url TEXT NOT NULL,
+      user_id INTEGER REFERENCES users(id),
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(content_id, site_url)
+    );
+    CREATE INDEX IF NOT EXISTS idx_blacklist_content ON scrape_blacklist(content_id);
+  `);
 }
 
 function seed() {
