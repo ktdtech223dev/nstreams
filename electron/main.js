@@ -246,11 +246,17 @@ ipcMain.handle('install-update', async (_, { downloadUrl }) => {
 
   const fs = require('fs');
   const { spawn } = require('child_process');
-  const exePath = process.execPath;
+
+  // For electron-builder portable target, process.execPath points to a
+  // temp-extracted copy that gets deleted on quit. The real exe the user
+  // launched is exposed via PORTABLE_EXECUTABLE_FILE. Fall back to
+  // execPath when running from a proper install (not portable).
+  const exePath = process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
   const dir = path.dirname(exePath);
   const name = path.basename(exePath);
   const updatePath = path.join(dir, `${name}.update.exe`);
   const batPath = path.join(dir, 'nstreams-updater.bat');
+  const logPath = path.join(dir, 'nstreams-updater.log');
 
   // Send progress events to renderer
   const send = (event, payload) => {
@@ -289,28 +295,52 @@ ipcMain.handle('install-update', async (_, { downloadUrl }) => {
   send('downloaded', { path: updatePath });
 
   // 2. Write updater batch
-  // "ping -n" gives us a sleep that works on all Windows versions.
-  // We keep the new exe's name the same as the current one so Desktop
-  // shortcuts stay valid.
+  // Logs every step to nstreams-updater.log next to the exe so failures
+  // are debuggable. "ping -n" gives us a portable sleep.
   const bat = `@echo off
-:: N Streams portable updater — auto-deletes itself.
+setlocal enableextensions
 chcp 65001 >NUL
-ping -n 3 127.0.0.1 >NUL
-:retry
+set "LOG=${logPath}"
+> "%LOG%" echo [%DATE% %TIME%] N Streams updater starting
+echo   exePath   = ${exePath} >> "%LOG%"
+echo   updatePath = ${updatePath} >> "%LOG%"
+echo Waiting for app to exit... >> "%LOG%"
+
+:: Wait up to 20s for the running app to release the file
+set /a tries=0
+:wait_loop
+ping -n 2 127.0.0.1 >NUL
 del "${exePath}" 2>NUL
-if exist "${exePath}" (
-  ping -n 2 127.0.0.1 >NUL
-  goto retry
+if not exist "${exePath}" goto swap
+set /a tries=tries+1
+if %tries% LSS 10 goto wait_loop
+echo WARNING: exe still locked after 20s — trying move anyway >> "%LOG%"
+
+:swap
+echo Moving update into place... >> "%LOG%"
+move /y "${updatePath}" "${exePath}" >> "%LOG%" 2>&1
+if errorlevel 1 (
+  echo ERROR: move failed. Update exe left at ${updatePath} >> "%LOG%"
+  echo Open the log: %LOG% > "${updatePath}.INSTALL_FAILED.txt"
+  exit /b 1
 )
-move /y "${updatePath}" "${exePath}" >NUL
+
+echo Launching new version: ${exePath} >> "%LOG%"
 start "" "${exePath}"
-del "%~f0"
+echo Done. >> "%LOG%"
+
+:: Self-delete
+(goto) 2>NUL & del "%~f0"
 `;
   fs.writeFileSync(batPath, bat, 'utf8');
 
-  // 3. Spawn detached + quit
+  // 3. Spawn detached + quit. Show the cmd window so users see activity
+  // (and can read error text if swap fails).
   const child = spawn('cmd.exe', ['/c', batPath], {
-    detached: true, stdio: 'ignore', windowsHide: true
+    detached: true,
+    stdio: 'ignore',
+    windowsHide: false,   // show window so it's obvious something is happening
+    cwd: dir
   });
   child.unref();
 
