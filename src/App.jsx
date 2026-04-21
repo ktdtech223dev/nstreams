@@ -52,6 +52,13 @@ export default function App() {
   }, [activeUserId]);
 
   useEffect(() => {
+    if (!window.electron?.onPopupBlocked) return;
+    window.electron.onPopupBlocked(() => {
+      showToast('🛡 Popup blocked');
+    });
+  }, []);
+
+  useEffect(() => {
     if (!window.electron) return;
     window.electron.onOAuthCallback(async (url) => {
       try {

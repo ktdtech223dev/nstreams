@@ -408,6 +408,35 @@ function WhereToWatchTab({ data, onWatch, contentId, onLinkOpen }) {
         )}
       </div>
 
+      {data.search_sites?.length > 0 && (
+        <div>
+          <h3 className="font-display text-xl text-white mb-1">Search Other Sites</h3>
+          <div className="text-xs text-muted mb-3">
+            Not a perfect match? Click to search these sites directly for "{data.title}"
+            — good for free aggregators like Miruro, HiAnime, etc. that TMDB doesn't index.
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+            {data.search_sites.map(s => (
+              <button
+                key={s.id}
+                onClick={() => onWatch(s.id, s.search_url, { inApp: true, siteName: s.name })}
+                className="bg-bg3 border border-border hover:border-accent hover:bg-bg4 rounded-lg p-3 flex items-center gap-2 transition text-left"
+                title={`Search ${s.name} for ${data.title}`}
+              >
+                {s.logo_url && <img src={s.logo_url} className="w-6 h-6 rounded shrink-0" alt="" />}
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm text-white truncate">{s.name}</div>
+                  <div className="text-[10px] text-muted flex items-center gap-1">
+                    🔍 Search
+                    {s.is_free === 1 && <span className="text-green">· FREE</span>}
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div>
         <div className="flex justify-between items-center mb-3">
           <h3 className="font-display text-xl text-white">In Your Catalog</h3>

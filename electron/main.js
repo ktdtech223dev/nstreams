@@ -5,6 +5,7 @@ const Store = require('electron-store');
 const store = new Store();
 const { startServer, getResolvedPort } = require('./server/index');
 const party = require('./party');
+const adblocker = require('./adblocker');
 
 // Lock to a single running instance BEFORE anything else touches the port.
 const singleInstance = app.requestSingleInstanceLock();
@@ -137,6 +138,28 @@ ipcMain.handle('watch-in-app', async (_, { url, title, sessionId, partyId }) => 
     }
   });
 
+  // Nuke every popup attempt by default — how most scraper-site ads fire.
+  // Keeps the viewer window quiet. User can switch to "Open externally"
+  // if a legit feature needs a popup (login flows, trailer previews etc.).
+  viewer.webContents.setWindowOpenHandler(({ url: targetUrl, disposition }) => {
+    // Allow about:blank handshakes some sites use internally
+    if (targetUrl === 'about:blank') return { action: 'allow' };
+    // Block everything else. Emit to main window so we can toast it.
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('viewer-popup-blocked', { url: targetUrl });
+    }
+    return { action: 'deny' };
+  });
+
+  // Block navigation to known-bad domains at the webRequest level too
+  viewer.webContents.on('will-navigate', (e, navUrl) => {
+    const bad = /(?:\.ads?\.|doubleclick\.net|googleadservices|popads|popcash|adsterra|propellerads|exoclick|trafficjunky|clickadu|hilltopads)/i;
+    if (bad.test(navUrl)) {
+      e.preventDefault();
+      console.log('[viewer] blocked nav to', navUrl);
+    }
+  });
+
   viewer.loadURL(url);
 
   if (sessionId) viewerWindows.set(String(sessionId), viewer);
@@ -230,6 +253,26 @@ function cmpSemver(a, b) {
 
 ipcMain.handle('open-user-data-folder', () => {
   shell.openPath(app.getPath('userData'));
+});
+
+ipcMain.handle('adblock-status', () => ({
+  enabled: adblocker.isEnabled(),
+  setting: store.get('adblock_enabled', true)
+}));
+ipcMain.handle('adblock-toggle', async (_, on) => {
+  store.set('adblock_enabled', !!on);
+  if (on) {
+    if (!adblocker.isEnabled()) {
+      await adblocker.init(app.getPath('userData'));
+      adblocker.enableFor(session.defaultSession);
+      adblocker.enableFor(session.fromPartition('persist:nstreams-viewer'));
+    } else {
+      adblocker.enable();
+    }
+  } else {
+    adblocker.disable();
+  }
+  return { enabled: adblocker.isEnabled() };
 });
 
 // Download and install an update in-place.
@@ -397,6 +440,15 @@ party.registerIpc({
 });
 
 app.whenReady().then(async () => {
+  // Initialize ad/tracker blocker (non-blocking — app still runs if it fails)
+  const adblockEnabled = store.get('adblock_enabled', true);
+  if (adblockEnabled) {
+    adblocker.init(app.getPath('userData')).then(() => {
+      adblocker.enableFor(session.defaultSession);
+      adblocker.enableFor(session.fromPartition('persist:nstreams-viewer'));
+    });
+  }
+
   await createWindow();
   party.setWindows(mainWindow, null);
 });

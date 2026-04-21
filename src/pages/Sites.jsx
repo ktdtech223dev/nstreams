@@ -73,7 +73,7 @@ function AddSiteModal({ onClose, onSaved }) {
   const { activeUserId, showToast } = useApp();
   const [form, setForm] = useState({
     name: '', url: '', category: 'streaming', description: '',
-    is_free: 1, requires_vpn: 0, quality: 'HD'
+    is_free: 1, requires_vpn: 0, quality: 'HD', search_url_template: ''
   });
   const [saving, setSaving] = useState(false);
 
@@ -140,6 +140,18 @@ function AddSiteModal({ onClose, onSaved }) {
             onChange={e => setForm({ ...form, description: e.target.value })}
             className="input w-full h-16 resize-none"
           />
+          <div>
+            <input
+              placeholder="Search URL template (optional) — use {title} as placeholder"
+              value={form.search_url_template}
+              onChange={e => setForm({ ...form, search_url_template: e.target.value })}
+              className="input w-full"
+            />
+            <div className="text-[10px] text-muted mt-1 leading-tight">
+              Example: <code className="text-accent">https://www.miruro.tv/search?query={'{title}'}</code>
+              {' '}— lets "Search on {form.name || 'Site'}" appear on every show.
+            </div>
+          </div>
           <div className="grid grid-cols-3 gap-3">
             <select
               value={form.quality}

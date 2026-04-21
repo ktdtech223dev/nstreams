@@ -50,7 +50,8 @@ router.post('/sites', (req, res) => {
   try {
     const {
       name, url, category, description,
-      is_free = 1, requires_vpn = 0, quality = 'HD', user_id
+      is_free = 1, requires_vpn = 0, quality = 'HD',
+      search_url_template = null, user_id
     } = req.body;
     const db = getDB();
 
@@ -60,10 +61,11 @@ router.post('/sites', (req, res) => {
     const info = db.prepare(`
       INSERT INTO sites
         (name, url, category, description, is_free, requires_vpn,
-         quality, logo_url, added_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+         quality, logo_url, search_url_template, added_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(name, url, category, description, is_free ? 1 : 0,
-           requires_vpn ? 1 : 0, quality, logo_url, user_id);
+           requires_vpn ? 1 : 0, quality, logo_url,
+           search_url_template || null, user_id);
 
     db.prepare(`
       INSERT INTO activity_feed (user_id, activity_type, metadata)

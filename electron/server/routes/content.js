@@ -153,7 +153,38 @@ router.get('/content/:id/where-to-watch', async (req, res) => {
       requires_drm: requiresDrm(l.name)
     }));
 
-    res.json({ tmdb_providers, crew_links: crew_links_enriched, title: content.title });
+    // Build a "search these sites for this title" list —
+    // every catalog site with a search_url_template that isn't already
+    // represented in TMDB providers or crew links.
+    const allSites = db.prepare(`
+      SELECT * FROM sites WHERE search_url_template IS NOT NULL
+      ORDER BY upvotes DESC, name ASC
+    `).all();
+    const coveredSiteIds = new Set([
+      ...tmdb_providers.map(p => p.site_in_catalog?.id).filter(Boolean),
+      ...crew_links_enriched.map(l => l.site_id)
+    ]);
+    const searchable = allSites
+      .filter(s => !coveredSiteIds.has(s.id))
+      .map(s => ({
+        id: s.id,
+        name: s.name,
+        url: s.url,
+        logo_url: s.logo_url,
+        category: s.category,
+        quality: s.quality,
+        is_free: s.is_free,
+        requires_vpn: s.requires_vpn,
+        search_url: (s.search_url_template || '').replace('{title}', encodeURIComponent(content.title)),
+        requires_drm: requiresDrm(s.name)
+      }));
+
+    res.json({
+      tmdb_providers,
+      crew_links: crew_links_enriched,
+      search_sites: searchable,
+      title: content.title
+    });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

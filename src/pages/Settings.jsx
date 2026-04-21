@@ -322,6 +322,8 @@ export default function Settings() {
 
       <WatchPartySection />
 
+      <AdblockSection />
+
       <LinkedAccountsSection />
 
       <Section title="Sync Status">
@@ -579,6 +581,59 @@ function WatchPartySection() {
           No active party. Start one from any show's Watch Together button.
         </p>
       )}
+    </Section>
+  );
+}
+
+function AdblockSection() {
+  const { showToast } = useApp();
+  const [status, setStatus] = useState(null);
+
+  useEffect(() => {
+    window.electron?.adblockStatus().then(setStatus);
+  }, []);
+
+  async function toggle() {
+    const r = await window.electron.adblockToggle(!status?.setting);
+    setStatus({ enabled: r.enabled, setting: !status?.setting });
+    showToast(r.enabled ? 'Ad blocker ON' : 'Ad blocker OFF');
+  }
+
+  return (
+    <Section title="Ad & Popup Blocking">
+      <p className="text-muted text-sm mb-4">
+        When you watch on free aggregator sites like Miruro or HiAnime, ads and popups
+        can overwhelm the embedded viewer (unlike your browser, you can't alt-tab to a new
+        tab to deal with them). N Streams ships with EasyList + EasyPrivacy filters applied
+        to the viewer session, plus a popup blocker that refuses every new-window attempt.
+      </p>
+      <div className="flex items-center justify-between bg-bg3 border border-border rounded-lg p-3">
+        <div>
+          <div className="text-white font-medium">Block ads, trackers, and popups</div>
+          <div className="text-xs text-muted">
+            {status?.enabled
+              ? '✓ Active in viewer + main window'
+              : status?.setting === false
+              ? 'Disabled'
+              : 'Initializing…'}
+          </div>
+        </div>
+        <button
+          onClick={toggle}
+          className={`relative w-12 h-6 rounded-full transition ${
+            status?.setting ? 'bg-accent' : 'bg-bg4'
+          }`}
+        >
+          <span
+            className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition-all ${
+              status?.setting ? 'left-6' : 'left-0.5'
+            }`}
+          />
+        </button>
+      </div>
+      <div className="text-xs text-muted mt-3">
+        If a site isn't loading correctly, try toggling this off temporarily.
+      </div>
     </Section>
   );
 }
