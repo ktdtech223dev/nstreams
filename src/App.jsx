@@ -62,6 +62,9 @@ export default function App() {
     window.electron?.onViewerEscaped?.(() => {
       showToast('Opened in your default browser ↗');
     });
+    window.electron?.onRedirectBlocked?.((d) => {
+      showToast(`🛡 Blocked ad redirect → ${d.host || 'unknown'}`);
+    });
   }, []);
 
   useEffect(() => {

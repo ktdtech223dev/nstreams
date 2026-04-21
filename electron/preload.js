@@ -33,9 +33,11 @@ contextBridge.exposeInMainWorld('electron', {
   player: {
     open: (opts) => ipcRenderer.invoke('player:open', opts),
     close: () => ipcRenderer.invoke('player:close'),
+    reload: () => ipcRenderer.invoke('player:reload'),
     setBounds: (bounds) => ipcRenderer.invoke('player:set-bounds', bounds),
     getState: () => ipcRenderer.invoke('player:get-state')
   },
+  onRedirectBlocked: (cb) => ipcRenderer.on('viewer-redirect-blocked', (_, data) => cb(data)),
   // Legacy pop-out window (fallback; not used by default anymore)
   watchInApp: (opts) => ipcRenderer.invoke('watch-in-app', opts),
   clearViewerSession: () => ipcRenderer.invoke('clear-viewer-session'),

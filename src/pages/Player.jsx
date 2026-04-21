@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { ExternalLink, X, Play, RotateCcw, Users } from 'lucide-react';
+import { ExternalLink, X, Play, RotateCcw, Users, RefreshCw } from 'lucide-react';
 import api from '../api';
 import { useApp } from '../App';
 
@@ -104,23 +104,35 @@ export default function Player({ session, onClose }) {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between px-5 py-2.5 surface-glass border-b border-border shrink-0">
-        <div className="min-w-0 flex-1">
+      <div className="flex items-center justify-between px-4 py-2 surface-glass border-b border-border shrink-0 relative z-10">
+        <div className="min-w-0 flex-1 pr-4">
           <div className="text-[10px] uppercase tracking-[.15em] text-muted">Now playing</div>
           <div className="text-white font-medium truncate">{session.title}</div>
         </div>
-        <div className="flex gap-2 shrink-0 items-center">
+        <div className="flex gap-1.5 shrink-0 items-center">
           {session.partyId && (
             <span className="text-xs bg-accent/20 text-accent px-3 py-1.5 rounded-full flex items-center gap-1.5 font-semibold">
               <span className="w-1.5 h-1.5 bg-green rounded-full animate-pulse" />
-              <Users size={12} /> Watch Party
+              <Users size={12} /> Party
             </span>
           )}
-          <button onClick={openExternal} className="btn btn-ghost">
+          <button
+            onClick={() => window.electron?.player?.reload?.()}
+            className="btn btn-icon btn-ghost"
+            title="Reload player (use if an ad redirects you)"
+          >
+            <RefreshCw size={15} />
+          </button>
+          <button onClick={openExternal} className="btn btn-ghost" title="Open in default browser">
             <ExternalLink size={14} /> Open in browser
           </button>
-          <button onClick={exit} className="btn btn-icon btn-ghost" aria-label="Close">
-            <X size={16} />
+          <button
+            onClick={exit}
+            className="w-11 h-10 rounded-full bg-red/20 hover:bg-red text-red hover:text-white flex items-center justify-center transition ring-1 ring-red/30 hover:ring-red"
+            aria-label="Close player"
+            title="Close player"
+          >
+            <X size={20} strokeWidth={2.5} />
           </button>
         </div>
       </div>

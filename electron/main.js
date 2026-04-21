@@ -387,16 +387,46 @@ ipcMain.handle('player:open', async (_, opts) => {
       else adblocker.enable();
     }
 
-    // Popup handler — same rules as the old window viewer
+    // Host guardrails — scraper/embed sites love to hijack the top
+    // frame and redirect us to ad pages (Stake.us, sports-betting
+    // landers, etc). Pin playback to the initial URL's root domain +
+    // a handful of known video-CDN hosts the embeds legitimately use.
     const viewerHost = (() => { try { return new URL(url).hostname; } catch { return ''; } })();
+    const viewerRoot = viewerHost.split('.').slice(-2).join('.');
+    const STREAMING_CDN_ROOTS = new Set([
+      // VidSrc fronts + CDNs
+      'vidsrc.to', 'vidsrc.me', 'vidsrc.net', 'vidsrc.xyz', 'vidsrc.stream', 'vidsrc.pro',
+      'cloudnestra.com', 'rcp.me', '2embed.skin', 'rapidcloud.co', 'superembed.stream',
+      // Embed.su + common sources
+      'embed.su', 'vidlink.pro', 'smashystream.com', 'smashy.stream',
+      // 2Embed fronts
+      '2embed.cc', '2embed.org', '2embed.to',
+      // Media source CDNs
+      'megacloud.tv', 'megacloud.ru', 'akamaihd.net', 'cloudfront.net',
+      // Anime aggregators' known CDN hosts
+      'miruro.tv', 'anify.eltik.cc', 'allanime.to', 'aniplaynow.live',
+      // FlixHQ / SFlix bundles
+      'flixhq.to', 'sflix.to'
+    ]);
+
+    function isAllowedHost(hostname) {
+      if (!hostname) return false;
+      if (hostname === viewerHost) return true;
+      if (viewerRoot && (hostname === viewerRoot || hostname.endsWith('.' + viewerRoot))) return true;
+      for (const root of STREAMING_CDN_ROOTS) {
+        if (hostname === root || hostname.endsWith('.' + root)) return true;
+      }
+      return false;
+    }
+
     const premium = adblocker.isPremiumUrl(url);
+
     playerView.webContents.setWindowOpenHandler(({ url: targetUrl }) => {
       if (targetUrl === 'about:blank') return { action: 'allow' };
       if (premium) {
         try {
           const t = new URL(targetUrl).hostname;
-          const sameRoot = t === viewerHost ||
-            t.endsWith('.' + viewerHost.split('.').slice(-2).join('.'));
+          const sameRoot = t === viewerHost || t.endsWith('.' + viewerRoot);
           if (sameRoot) return { action: 'allow' };
         } catch {}
       }
@@ -405,6 +435,30 @@ ipcMain.handle('player:open', async (_, opts) => {
       }
       return { action: 'deny' };
     });
+
+    // Block top-frame navigations to other domains. Allow the initial
+    // load through by flipping a flag after did-finish-load.
+    let navGuardArmed = false;
+    playerView.webContents.on('did-finish-load', () => { navGuardArmed = true; });
+
+    const guard = (event, targetUrl) => {
+      if (!navGuardArmed) return;
+      try {
+        const t = new URL(targetUrl).hostname;
+        if (isAllowedHost(t)) return;
+        event.preventDefault();
+        console.log('[player] blocked redirect →', t);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('viewer-redirect-blocked', {
+            from: playerView.webContents.getURL(),
+            to: targetUrl,
+            host: t
+          });
+        }
+      } catch {}
+    };
+    playerView.webContents.on('will-navigate', guard);
+    playerView.webContents.on('will-redirect', guard);
 
     // Position + duration heartbeat from viewer-preload
     ipcMain.removeAllListeners('player:heartbeat');
@@ -459,6 +513,12 @@ ipcMain.handle('player:get-state', () => ({
   open: !!playerView,
   ...playerState
 }));
+
+ipcMain.handle('player:reload', () => {
+  if (!playerView || !playerState.url) return { ok: false };
+  try { playerView.webContents.loadURL(playerState.url); } catch {}
+  return { ok: true };
+});
 
 // Legacy viewer-close escape button from preload
 ipcMain.on('viewer:open-externally', (event) => {
