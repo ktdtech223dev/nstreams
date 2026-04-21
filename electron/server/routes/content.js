@@ -250,6 +250,11 @@ router.get('/content/:id/season/:n', async (req, res) => {
   }
 });
 
+// GET /api/tmdb/status — tells the UI whether we're on the crew default key
+router.get('/tmdb/status', (req, res) => {
+  res.json({ using_default: tmdb.isUsingDefaultKey() });
+});
+
 // GET /api/discover/trending?type=all|tv|movie
 router.get('/discover/trending', async (req, res) => {
   try {

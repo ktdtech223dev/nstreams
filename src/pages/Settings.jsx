@@ -154,27 +154,7 @@ export default function Settings() {
         </div>
       </Section>
 
-      <Section title="TMDB">
-        <label className="text-xs uppercase text-muted">API Key</label>
-        <div className="flex gap-2 mt-1">
-          <input
-            type="password"
-            value={tmdbKey}
-            onChange={e => setTmdbKey(e.target.value)}
-            placeholder="Your TMDB v3 API key"
-            className="input flex-1"
-          />
-          <button onClick={() => saveKey('tmdb_api_key', tmdbKey)} className="btn btn-primary">Save</button>
-          <button onClick={testTmdb} className="btn btn-ghost">Test</button>
-        </div>
-        <a
-          href="https://www.themoviedb.org/settings/api"
-          onClick={e => { e.preventDefault(); window.electron?.openUrl(e.currentTarget.href); }}
-          className="text-xs text-accent hover:underline mt-2 inline-block"
-        >
-          Get a free key at themoviedb.org →
-        </a>
-      </Section>
+      <TmdbSection tmdbKey={tmdbKey} setTmdbKey={setTmdbKey} saveKey={saveKey} testTmdb={testTmdb} showToast={showToast} />
 
       <Section title={`MyAnimeList — ${activeUser?.display_name}`}>
         <div className="bg-bg3 border border-border rounded-lg p-3 mb-4 text-xs text-muted space-y-1">
@@ -338,6 +318,62 @@ export default function Settings() {
         </button>
       </Section>
     </div>
+  );
+}
+
+function TmdbSection({ tmdbKey, setTmdbKey, saveKey, testTmdb, showToast }) {
+  const [status, setStatus] = useState(null);
+  useEffect(() => { api.tmdbStatus().then(setStatus).catch(() => {}); }, [tmdbKey]);
+
+  async function resetToDefault() {
+    setTmdbKey('');
+    await window.electron.setStore('tmdb_api_key', '');
+    showToast('Reverted to N Games crew TMDB key');
+    api.tmdbStatus().then(setStatus);
+  }
+
+  const onDefault = status?.using_default;
+
+  return (
+    <Section title="TMDB">
+      <p className="text-muted text-sm mb-4">
+        TMDB powers search, Browse, Hero, episode cards and Where to Watch. N Streams ships
+        with the N Games crew's shared key — you don't need to do anything unless you want
+        to use your own (e.g. for higher rate limits).
+      </p>
+      <div className="flex items-center justify-between mb-2">
+        <label className="text-xs uppercase text-muted">API Key</label>
+        {onDefault && (
+          <span className="text-[10px] bg-accent/20 text-accent2 px-2 py-0.5 rounded-full flex items-center gap-1">
+            <span className="w-1.5 h-1.5 bg-green rounded-full" />
+            N Games crew default
+          </span>
+        )}
+      </div>
+      <div className="flex gap-2">
+        <input
+          type="password"
+          value={tmdbKey}
+          onChange={e => setTmdbKey(e.target.value)}
+          placeholder={onDefault ? 'Override with your own TMDB v3 key…' : 'Your TMDB v3 API key'}
+          className="input flex-1"
+        />
+        <button onClick={() => saveKey('tmdb_api_key', tmdbKey)} className="btn btn-primary">Save</button>
+        <button onClick={testTmdb} className="btn btn-ghost">Test</button>
+      </div>
+      {!onDefault && (
+        <button onClick={resetToDefault} className="text-xs text-accent hover:underline mt-2 inline-block">
+          ↺ Reset to N Games crew key
+        </button>
+      )}
+      <a
+        href="https://www.themoviedb.org/settings/api"
+        onClick={e => { e.preventDefault(); window.electron?.openUrl(e.currentTarget.href); }}
+        className="text-xs text-muted hover:text-accent block mt-2"
+      >
+        Get your own free key at themoviedb.org →
+      </a>
+    </Section>
   );
 }
 

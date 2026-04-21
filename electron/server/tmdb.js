@@ -5,10 +5,19 @@ const store = new Store();
 const BASE = 'https://api.themoviedb.org/3';
 const IMG = 'https://image.tmdb.org/t/p/';
 
+// N Games crew default — baked in so the app works out of the box for
+// everyone. Users can override in Settings if they want their own.
+const DEFAULT_TMDB_KEY = '9d2e9a6233558c9cd22fe3a745435bf1';
+
 function getKey() {
-  const key = store.get('tmdb_api_key');
-  if (!key) throw new Error('TMDB_KEY_MISSING');
-  return key;
+  const saved = store.get('tmdb_api_key');
+  if (saved && String(saved).trim()) return String(saved).trim();
+  return DEFAULT_TMDB_KEY;
+}
+
+function isUsingDefaultKey() {
+  const saved = store.get('tmdb_api_key');
+  return !(saved && String(saved).trim());
 }
 
 async function search(query, type = 'multi') {
@@ -210,5 +219,5 @@ async function getSeason(tvId, seasonNumber) {
 
 module.exports = {
   search, getDetails, discoverByProvider, trending, getSeason,
-  getProviderIdForSite, PROVIDER_MAP
+  getProviderIdForSite, PROVIDER_MAP, isUsingDefaultKey, DEFAULT_TMDB_KEY
 };

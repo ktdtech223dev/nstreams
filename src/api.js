@@ -54,6 +54,7 @@ export const api = {
   discoverService: (siteId, type = 'tv') => req('GET', `/discover/service/${siteId}?type=${type}`),
   discoverTrending: (type = 'all') => req('GET', `/discover/trending?type=${type}`),
   linkableSites: () => req('GET', '/sites/linkable'),
+  tmdbStatus: () => req('GET', '/tmdb/status'),
   scrapeAvailability: (contentId, userId) => req('GET',
     `/scrape/availability/${contentId}${userId ? `?user_id=${userId}` : ''}`),
   clearScrapeCache: () => req('POST', '/scrape/clear-cache'),
