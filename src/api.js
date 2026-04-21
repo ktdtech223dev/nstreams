@@ -53,6 +53,8 @@ export const api = {
   discoverService: (siteId, type = 'tv') => req('GET', `/discover/service/${siteId}?type=${type}`),
   discoverTrending: (type = 'all') => req('GET', `/discover/trending?type=${type}`),
   linkableSites: () => req('GET', '/sites/linkable'),
+  scrapeAvailability: (contentId) => req('GET', `/scrape/availability/${contentId}`),
+  clearScrapeCache: () => req('POST', '/scrape/clear-cache'),
   redirectUris: () => req('GET', '/sync/redirect-uris'),
   malConnect: (userId) => req('POST', '/sync/mal/connect', { userId }),
   malSync: (userId) => req('POST', `/sync/mal/${userId}`),

@@ -1,6 +1,7 @@
 const express = require('express');
 const { getDB } = require('../database');
 const tmdb = require('../tmdb');
+const scrapers = require('../scrapers');
 const { deepLinkFor, loginUrlFor, requiresDrm } = require('../deeplinks');
 
 const router = express.Router();
@@ -267,6 +268,35 @@ router.get('/discover/all', async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// Simple in-memory cache with 1h TTL so we don't hammer Consumet
+const SCRAPE_CACHE = new Map();
+const SCRAPE_TTL = 60 * 60 * 1000; // 1h
+
+// GET /api/scrape/availability/:contentId
+// Local resolver — runs in-app per user. Anime uses AniList IDs to
+// build direct URLs on Miruro/Anify. Movies + TV scrape FlixHQ + SFlix
+// search pages. Cached for 1h per content.
+router.get('/scrape/availability/:contentId', async (req, res) => {
+  try {
+    const { contentId } = req.params;
+    const cacheKey = `${contentId}`;
+    const cached = SCRAPE_CACHE.get(cacheKey);
+    if (cached && Date.now() - cached.ts < SCRAPE_TTL) {
+      return res.json({ ...cached.data, cached: true });
+    }
+    const payload = await scrapers.resolveAvailability(contentId);
+    SCRAPE_CACHE.set(cacheKey, { ts: Date.now(), data: payload });
+    res.json(payload);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/scrape/clear-cache', (req, res) => {
+  SCRAPE_CACHE.clear();
+  res.json({ ok: true });
 });
 
 module.exports = router;

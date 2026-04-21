@@ -585,6 +585,96 @@ function WatchPartySection() {
   );
 }
 
+// Unused — kept for reference, removed from render
+// eslint-disable-next-line no-unused-vars
+function _UnusedScraperSection() {
+  const { showToast } = useApp();
+  const [url, setUrl] = useState('');
+  const [saved, setSaved] = useState('');
+  const [status, setStatus] = useState(null);
+  const [testing, setTesting] = useState(false);
+  const DEFAULT = 'https://api.consumet.org';
+
+  useEffect(() => {
+    (async () => {
+      if (!window.electron) return;
+      const v = await window.electron.getStore('consumet_url');
+      setUrl(v || DEFAULT);
+      setSaved(v || DEFAULT);
+    })();
+  }, []);
+
+  async function save() {
+    await window.electron.setStore('consumet_url', url.trim());
+    setSaved(url.trim());
+    await api.clearScrapeCache();
+    showToast('Scraper URL saved');
+  }
+
+  async function test() {
+    setTesting(true);
+    try {
+      const r = await api.scrapeTest();
+      setStatus(`✓ Reachable · ${r.url}`);
+    } catch (e) {
+      setStatus(`✗ ${e.message}`);
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  async function reset() {
+    setUrl(DEFAULT);
+    await window.electron.setStore('consumet_url', DEFAULT);
+    setSaved(DEFAULT);
+    await api.clearScrapeCache();
+    showToast('Reset to public Consumet');
+  }
+
+  const isDefault = saved === DEFAULT;
+
+  return (
+    <Section title="Aggregator Scraper (Consumet)">
+      <p className="text-muted text-sm mb-4">
+        Consumet is an open-source API that scrapes HiAnime, GogoAnime, AnimePahe, FlixHQ,
+        FMovies, DramaCool and more. N Streams queries it on every show's Where to Watch tab
+        to show direct-play links that bypass DRM. No site-specific maintenance needed on our end.
+      </p>
+      <div className="bg-bg3 border border-border rounded-lg p-3 mb-4 text-xs text-muted space-y-1">
+        <div className="text-white text-sm font-medium mb-1">Deploy your own (recommended):</div>
+        <div>1. Fork or clone <a
+          href="https://github.com/consumet/api.consumet.org"
+          onClick={e => { e.preventDefault(); window.electron?.openUrl(e.currentTarget.href); }}
+          className="text-accent hover:underline">consumet/api.consumet.org</a></div>
+        <div>2. Deploy to Railway (same way as your relay)</div>
+        <div>3. Paste the Railway URL below</div>
+        <div className="text-gold mt-2">
+          Using the default public API? Rate limits may kick in. Self-hosting is free on Railway and never throttles.
+        </div>
+      </div>
+      <label className="text-xs uppercase text-muted">Consumet URL</label>
+      <div className="flex gap-2 mt-1 mb-2">
+        <input
+          value={url}
+          onChange={e => setUrl(e.target.value)}
+          placeholder={DEFAULT}
+          className="input flex-1"
+        />
+        <button onClick={save} className="btn btn-primary">Save</button>
+        <button onClick={test} disabled={testing || !url} className="btn btn-ghost">
+          {testing ? 'Testing…' : 'Test'}
+        </button>
+      </div>
+      {!isDefault && (
+        <button onClick={reset} className="text-xs text-accent hover:underline mb-2">
+          ↺ Reset to public Consumet
+        </button>
+      )}
+      {status && <div className="text-xs text-muted">{status}</div>}
+    </Section>
+  );
+}
+
 function AdblockSection() {
   const { showToast } = useApp();
   const [status, setStatus] = useState(null);

@@ -40,9 +40,17 @@ export default function ContentModal({ contentId, onClose }) {
     })();
   }, [contentId]);
 
+  const [scraped, setScraped] = useState(null); // {results, loading, error}
+
   useEffect(() => {
     if (tab === 'where' && !where && content) {
       api.whereToWatch(contentId).then(setWhere).catch(() => {});
+    }
+    if (tab === 'where' && !scraped && content) {
+      setScraped({ loading: true, results: [] });
+      api.scrapeAvailability(contentId)
+        .then(d => setScraped({ loading: false, results: d.results || [], data: d }))
+        .catch(e => setScraped({ loading: false, results: [], error: e.message }));
     }
   }, [tab, content]);
 
@@ -207,6 +215,7 @@ export default function ContentModal({ contentId, onClose }) {
           {tab === 'where' && (
             <WhereToWatchTab
               data={where}
+              scraped={scraped}
               onWatch={watchNow}
               contentId={contentId}
               onLinkOpen={() => setLinkOpen(true)}
@@ -330,7 +339,7 @@ function OverviewTab({ content, wl, update, cast }) {
   );
 }
 
-function WhereToWatchTab({ data, onWatch, contentId, onLinkOpen }) {
+function WhereToWatchTab({ data, scraped, onWatch, contentId, onLinkOpen }) {
   if (!data) return <div className="text-muted">Loading...</div>;
 
   const hasElectron = !!window.electron?.watchInApp;
@@ -359,6 +368,62 @@ function WhereToWatchTab({ data, onWatch, contentId, onLinkOpen }) {
 
   return (
     <div className="space-y-8">
+      {/* SCRAPED AVAILABILITY — Consumet lookup across aggregator sites */}
+      <div>
+        <h3 className="font-display text-xl text-white mb-1">
+          Found on Aggregators {scraped?.results?.length > 0 && (
+            <span className="text-sm text-accent ml-2">{scraped.results.length} match{scraped.results.length === 1 ? '' : 'es'}</span>
+          )}
+        </h3>
+        <div className="text-xs text-muted mb-3">
+          Auto-detected from HiAnime, GogoAnime, AnimePahe, FlixHQ, FMovies, DramaCool, and more.
+          Click to open the direct show page in the viewer — no DRM required.
+        </div>
+        {!scraped || scraped.loading ? (
+          <div className="bg-bg3 border border-border rounded-lg p-4 text-muted text-sm">
+            🔍 Checking aggregator sites…
+          </div>
+        ) : scraped.error ? (
+          <div className="bg-red/10 border border-red/40 text-red text-sm p-3 rounded-lg">
+            Scraper unreachable: {scraped.error}
+            <div className="text-muted text-xs mt-1">Check Settings → Aggregator Scraper</div>
+          </div>
+        ) : scraped.results.length === 0 ? (
+          <div className="bg-bg3/50 border border-border rounded-lg p-3 text-muted text-sm">
+            No matches found across aggregator sites.
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+            {scraped.results.map(r => (
+              <button
+                key={`${r.provider}-${r.id}`}
+                onClick={() => onWatch(null, r.site_url, { inApp: true, siteName: r.provider_name })}
+                className="bg-bg3 border border-border hover:border-accent rounded-lg p-3 text-left flex items-center gap-2 transition group"
+                title={`${r.title} on ${r.provider_name}`}
+              >
+                {r.image && (
+                  <img
+                    src={r.image}
+                    className="w-10 h-14 rounded object-cover shrink-0"
+                    alt=""
+                    onError={e => { e.currentTarget.style.display = 'none'; }}
+                  />
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm text-white truncate group-hover:text-accent transition">
+                    {r.provider_name}
+                  </div>
+                  <div className="text-xs text-muted truncate">{r.title}</div>
+                  <div className="text-[10px] text-green mt-0.5">
+                    ▶ Watch · {r.match_score}% match
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
       <div>
         <h3 className="font-display text-xl text-white mb-1">Available On</h3>
         <div className="text-xs text-muted mb-3">
