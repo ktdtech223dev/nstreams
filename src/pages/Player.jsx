@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { ExternalLink, X, Play, RotateCcw, Users } from 'lucide-react';
 import api from '../api';
 import { useApp } from '../App';
 
@@ -103,23 +104,23 @@ export default function Player({ session, onClose }) {
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-2 bg-bg2 border-b border-border shrink-0">
+      <div className="flex items-center justify-between px-5 py-2.5 surface-glass border-b border-border shrink-0">
         <div className="min-w-0 flex-1">
-          <div className="text-sm text-muted">Now playing</div>
+          <div className="text-[10px] uppercase tracking-[.15em] text-muted">Now playing</div>
           <div className="text-white font-medium truncate">{session.title}</div>
         </div>
-        <div className="flex gap-2 shrink-0">
+        <div className="flex gap-2 shrink-0 items-center">
           {session.partyId && (
-            <span className="text-xs bg-accent/20 text-accent px-2 py-1 rounded flex items-center gap-1">
+            <span className="text-xs bg-accent/20 text-accent px-3 py-1.5 rounded-full flex items-center gap-1.5 font-semibold">
               <span className="w-1.5 h-1.5 bg-green rounded-full animate-pulse" />
-              Watch Party
+              <Users size={12} /> Watch Party
             </span>
           )}
-          <button onClick={openExternal} className="btn btn-ghost text-xs py-1.5">
-            ↗ Open in browser
+          <button onClick={openExternal} className="btn btn-ghost">
+            <ExternalLink size={14} /> Open in browser
           </button>
-          <button onClick={exit} className="btn btn-ghost text-xs py-1.5 hover:bg-red hover:text-white">
-            ✕ Close
+          <button onClick={exit} className="btn btn-icon btn-ghost" aria-label="Close">
+            <X size={16} />
           </button>
         </div>
       </div>
@@ -134,23 +135,23 @@ export default function Player({ session, onClose }) {
         )}
         {resume && !opened && (
           <div className="absolute inset-0 flex items-center justify-center bg-bg">
-            <div className="bg-bg2 border border-border rounded-xl p-8 max-w-md text-center">
-              <div className="font-display text-2xl text-white mb-2">Welcome back</div>
-              <div className="text-muted text-sm mb-6">
-                You were {fmtTime(resume.last_position_seconds)} into this show.
+            <div className="surface-elevated rounded-2xl p-10 max-w-md text-center shadow-lg">
+              <div className="display-md text-white mb-2">Welcome back</div>
+              <div className="text-muted mb-8">
+                You were <span className="text-white">{fmtTime(resume.last_position_seconds)}</span> into this show.
               </div>
-              <div className="flex gap-2 justify-center">
+              <div className="flex gap-3 justify-center">
                 <button
                   onClick={() => { loadAndOpen(resume.last_position_seconds); setResume(null); }}
-                  className="btn btn-primary"
+                  className="btn btn-primary btn-hero"
                 >
-                  ▶ Resume from {fmtTime(resume.last_position_seconds)}
+                  <Play size={16} fill="currentColor" /> Resume from {fmtTime(resume.last_position_seconds)}
                 </button>
                 <button
                   onClick={() => { loadAndOpen(0); setResume(null); }}
-                  className="btn btn-ghost"
+                  className="btn btn-ghost btn-hero"
                 >
-                  Start over
+                  <RotateCcw size={15} /> Start over
                 </button>
               </div>
             </div>

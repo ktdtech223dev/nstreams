@@ -31,7 +31,7 @@ export default function SiteCard({ site, onUpvoted, onDeleted }) {
   return (
     <div
       onClick={open}
-      className="bg-bg3 border border-border rounded-lg p-4 card-hover cursor-pointer flex items-center gap-4"
+      className="surface-elevated rounded-xl p-4 cursor-pointer flex items-center gap-4 hover:border-accent/60 transition-all hover:shadow-md"
     >
       <img
         src={site.logo_url || `https://www.google.com/s2/favicons?domain=${site.url}&sz=64`}

@@ -1,23 +1,23 @@
 import React, { useEffect, useState } from 'react';
+import { Search as SearchIcon } from 'lucide-react';
 import api from '../api';
 import { useApp } from '../App';
 import ContentCard from '../components/ContentCard';
-import SearchBar from '../components/SearchBar';
 
 const FILTERS = [
-  { id: 'all', label: 'All' },
-  { id: 'watching', label: 'Watching' },
+  { id: 'all',           label: 'All' },
+  { id: 'watching',      label: 'Watching' },
   { id: 'plan_to_watch', label: 'Plan to Watch' },
-  { id: 'completed', label: 'Completed' },
-  { id: 'on_hold', label: 'On Hold' },
-  { id: 'dropped', label: 'Dropped' }
+  { id: 'completed',     label: 'Completed' },
+  { id: 'on_hold',       label: 'On Hold' },
+  { id: 'dropped',       label: 'Dropped' }
 ];
 
 const SORTS = [
   { id: 'updated', label: 'Recently Updated' },
-  { id: 'title', label: 'A-Z' },
-  { id: 'rating', label: 'Your Rating' },
-  { id: 'added', label: 'Date Added' }
+  { id: 'title',   label: 'A–Z' },
+  { id: 'rating',  label: 'Your Rating' },
+  { id: 'added',   label: 'Date Added' }
 ];
 
 export default function Watchlist() {
@@ -36,22 +36,22 @@ export default function Watchlist() {
   }, [activeUserId, status, sort, q]);
 
   return (
-    <div className="max-w-[1600px]">
-      <header className="mb-6">
-        <h1 className="font-display text-5xl text-white tracking-wide">Your Watchlist</h1>
-        <p className="text-muted mt-1">{rows.length} titles</p>
+    <div>
+      <header className="mb-8">
+        <h1 className="display-lg text-white">My List</h1>
+        <p className="text-muted mt-1 text-sm">{rows.length} {rows.length === 1 ? 'title' : 'titles'}</p>
       </header>
 
-      <div className="flex flex-wrap gap-3 items-center mb-6">
-        <div className="flex gap-2 flex-wrap">
+      <div className="flex flex-wrap gap-3 items-center mb-8">
+        <div className="flex gap-1.5 flex-wrap">
           {FILTERS.map(f => (
             <button
               key={f.id}
               onClick={() => setStatus(f.id)}
-              className={`px-3 py-1.5 rounded-full text-sm transition ${
+              className={`px-4 py-1.5 rounded-full text-xs font-semibold uppercase tracking-wider transition ${
                 status === f.id
-                  ? 'bg-accent text-white'
-                  : 'bg-bg3 text-muted hover:bg-bg4 hover:text-white'
+                  ? 'bg-accent text-white glow'
+                  : 'bg-surface-2 text-muted hover:bg-surface-3 hover:text-white'
               }`}
             >
               {f.label}
@@ -66,20 +66,26 @@ export default function Watchlist() {
           >
             {SORTS.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
           </select>
-          <div className="w-64">
-            <SearchBar value={q} onChange={setQ} placeholder="Search watchlist..." />
+          <div className="relative">
+            <SearchIcon size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+            <input
+              value={q}
+              onChange={e => setQ(e.target.value)}
+              placeholder="Filter your list…"
+              className="input pl-9 w-64"
+            />
           </div>
         </div>
       </div>
 
       {rows.length === 0 ? (
-        <div className="text-center py-20 text-muted">
+        <div className="text-center py-24 text-muted">
           Nothing here yet. Head to Browse to add some.
         </div>
       ) : (
         <div
-          className="grid gap-4"
-          style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))' }}
+          className="grid gap-3"
+          style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', paddingBottom: '8rem' }}
         >
           {rows.map(w => <ContentCard key={w.id} item={w} />)}
         </div>

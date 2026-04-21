@@ -125,7 +125,7 @@ export default function Settings() {
   return (
     <div className="max-w-3xl space-y-8">
       <header>
-        <h1 className="font-display text-5xl text-white tracking-wide">Settings</h1>
+        <h1 className="display-lg text-white">Settings</h1>
       </header>
 
       <Section title="Active User">
@@ -859,8 +859,8 @@ function LinkedAccountsSection() {
 
 function Section({ title, children }) {
   return (
-    <section className="bg-bg2 rounded-xl p-6 border border-border">
-      <h2 className="font-display text-2xl text-white mb-4 tracking-wide">{title}</h2>
+    <section className="surface rounded-2xl p-6">
+      <h2 className="display-sm text-white mb-4">{title}</h2>
       {children}
     </section>
   );

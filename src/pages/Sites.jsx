@@ -28,24 +28,26 @@ export default function Sites() {
   const rows = cat === 'all' ? data.all : (data.grouped[cat] || []);
 
   return (
-    <div className="max-w-[1600px]">
-      <header className="mb-6 flex items-end justify-between">
+    <div>
+      <header className="mb-8 flex items-end justify-between">
         <div>
-          <h1 className="font-display text-5xl text-white tracking-wide">Site Catalog</h1>
-          <p className="text-muted mt-1">{data.all.length} sites</p>
+          <h1 className="display-lg text-white">Site Catalog</h1>
+          <p className="text-muted mt-1 text-sm">{data.all.length} sites</p>
         </div>
         <button onClick={() => setShowAdd(true)} className="btn btn-primary">
           + Add a Site
         </button>
       </header>
 
-      <div className="flex flex-wrap gap-2 mb-6">
+      <div className="flex flex-wrap gap-1.5 mb-8">
         {CATS.map(c => (
           <button
             key={c.id}
             onClick={() => setCat(c.id)}
-            className={`px-4 py-1.5 rounded-full text-sm transition ${
-              cat === c.id ? 'bg-accent text-white' : 'bg-bg3 text-muted hover:bg-bg4 hover:text-white'
+            className={`px-4 py-1.5 rounded-full text-xs font-semibold uppercase tracking-wider transition ${
+              cat === c.id
+                ? 'bg-accent text-white glow'
+                : 'bg-surface-2 text-muted hover:bg-surface-3 hover:text-white'
             }`}
           >
             {c.label}

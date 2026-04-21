@@ -68,7 +68,7 @@ async function createWindow() {
     minWidth: 1100,
     minHeight: 700,
     frame: false,
-    backgroundColor: '#080810',
+    backgroundColor: '#050510',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -370,6 +370,10 @@ ipcMain.handle('player:open', async (_, opts) => {
         preload: path.join(__dirname, 'viewer-preload.js'),
         contextIsolation: false,
         nodeIntegration: false,
+        // Inject viewer-preload into nested iframes so embed-aggregator
+        // videos (VidSrc/Embed.su/2Embed load the <video> in a child
+        // frame) still get resume tracking + party sync hooks.
+        nodeIntegrationInSubFrames: true,
         sandbox: false,
         plugins: true,
         webSecurity: true

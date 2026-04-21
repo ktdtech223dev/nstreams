@@ -270,9 +270,9 @@ router.get('/discover/all', async (req, res) => {
   }
 });
 
-// Simple in-memory cache with 1h TTL so we don't hammer Consumet
+// Simple in-memory cache. 24h TTL — availability doesn't churn hourly.
 const SCRAPE_CACHE = new Map();
-const SCRAPE_TTL = 60 * 60 * 1000; // 1h
+const SCRAPE_TTL = 24 * 60 * 60 * 1000;
 
 // GET /api/scrape/availability/:contentId
 // Local resolver — runs in-app per user. Anime uses AniList IDs to
@@ -281,12 +281,17 @@ const SCRAPE_TTL = 60 * 60 * 1000; // 1h
 router.get('/scrape/availability/:contentId', async (req, res) => {
   try {
     const { contentId } = req.params;
-    const cacheKey = `${contentId}`;
+    const { user_id, season, episode } = req.query;
+    const cacheKey = `${contentId}:${user_id || 'anon'}:${season || ''}:${episode || ''}`;
     const cached = SCRAPE_CACHE.get(cacheKey);
     if (cached && Date.now() - cached.ts < SCRAPE_TTL) {
       return res.json({ ...cached.data, cached: true });
     }
-    const payload = await scrapers.resolveAvailability(contentId);
+    const payload = await scrapers.resolveAvailability(contentId, {
+      userId: user_id ? parseInt(user_id) : undefined,
+      season: season ? parseInt(season) : undefined,
+      episode: episode ? parseInt(episode) : undefined
+    });
     SCRAPE_CACHE.set(cacheKey, { ts: Date.now(), data: payload });
     res.json(payload);
   } catch (e) {

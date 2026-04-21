@@ -7,19 +7,19 @@ export default function Crew() {
   const { users } = useApp();
 
   return (
-    <div className="max-w-[1600px]">
-      <header className="mb-6">
-        <h1 className="font-display text-5xl text-white tracking-wide">The Crew</h1>
-        <p className="text-muted mt-1">4 N Games members — their lists, progress, and activity</p>
+    <div>
+      <header className="mb-8">
+        <h1 className="display-lg text-white">The Crew</h1>
+        <p className="text-muted mt-1 text-sm">4 N Games members · their lists, progress, and activity</p>
       </header>
 
-      <div className="grid grid-cols-2 gap-5 mb-10">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-12">
         {users.map(u => <CrewCard key={u.id} user={u} />)}
       </div>
 
       <section>
-        <h2 className="font-display text-3xl text-white tracking-wide mb-4">Recent Activity</h2>
-        <div className="bg-bg2 border border-border rounded-xl p-4">
+        <h2 className="row-title mb-4">Recent Activity</h2>
+        <div className="surface rounded-2xl p-5">
           <ActivityFeed />
         </div>
       </section>

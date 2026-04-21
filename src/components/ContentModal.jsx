@@ -1,13 +1,17 @@
 import React, { useEffect, useState } from 'react';
+import {
+  X, Play, Users as UsersIcon, Film, MapPin, Info,
+  ExternalLink, Download
+} from 'lucide-react';
 import api from '../api';
 import { useApp } from '../App';
 import EpisodeTracker from './EpisodeTracker';
 
 const TABS = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'episodes', label: 'Episodes' },
-  { id: 'where', label: 'Where to Watch' },
-  { id: 'crew', label: 'Crew Progress' }
+  { id: 'overview', label: 'Overview', icon: Info },
+  { id: 'episodes', label: 'Episodes', icon: Film },
+  { id: 'where',    label: 'Where to Watch', icon: MapPin },
+  { id: 'crew',     label: 'Crew Progress', icon: UsersIcon }
 ];
 
 const STATUSES = [
@@ -48,7 +52,7 @@ export default function ContentModal({ contentId, onClose }) {
     }
     if (tab === 'where' && !scraped && content) {
       setScraped({ loading: true, results: [] });
-      api.scrapeAvailability(contentId)
+      api.scrapeAvailability(contentId, activeUserId)
         .then(d => setScraped({ loading: false, results: d.results || [], data: d }))
         .catch(e => setScraped({ loading: false, results: [], error: e.message }));
     }
@@ -58,7 +62,7 @@ export default function ContentModal({ contentId, onClose }) {
     // Re-fetch scraped after user hides a bad match
     const h = (e) => {
       if (String(e.detail?.contentId) !== String(contentId)) return;
-      api.scrapeAvailability(contentId)
+      api.scrapeAvailability(contentId, activeUserId)
         .then(d => setScraped({ loading: false, results: d.results || [], data: d }))
         .catch(() => {});
     };
@@ -149,16 +153,17 @@ export default function ContentModal({ contentId, onClose }) {
           <div className="absolute top-4 right-4 flex gap-2">
             <button
               onClick={() => { openWatchParty(contentId); }}
-              className="bg-accent hover:bg-accent3 text-white px-4 h-9 rounded-full font-medium text-sm transition flex items-center gap-2 glow"
+              className="btn btn-primary"
               title="Start a synced watch party with your crew"
             >
-              📺 Watch Together
+              <UsersIcon size={15} /> Watch Together
             </button>
             <button
               onClick={onClose}
-              className="w-9 h-9 bg-bg3/80 backdrop-blur hover:bg-red rounded-full text-white flex items-center justify-center transition"
+              className="btn btn-icon surface-glass"
+              aria-label="Close"
             >
-              ✕
+              <X size={16} />
             </button>
           </div>
           <div className="absolute bottom-4 left-6 right-6 flex gap-5 items-end">
@@ -190,19 +195,23 @@ export default function ContentModal({ contentId, onClose }) {
 
         {/* Tabs */}
         <div className="flex border-b border-border px-6 shrink-0">
-          {TABS.map(t => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`px-4 py-3 text-sm font-medium border-b-2 transition ${
-                tab === t.id
-                  ? 'text-white border-accent'
-                  : 'text-muted border-transparent hover:text-white'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
+          {TABS.map(t => {
+            const Icon = t.icon;
+            return (
+              <button
+                key={t.id}
+                onClick={() => setTab(t.id)}
+                className={`px-4 py-3 text-sm font-medium border-b-2 transition flex items-center gap-2 ${
+                  tab === t.id
+                    ? 'text-white border-accent'
+                    : 'text-muted border-transparent hover:text-white'
+                }`}
+              >
+                <Icon size={14} />
+                {t.label}
+              </button>
+            );
+          })}
         </div>
 
         {/* Content */}
@@ -422,42 +431,70 @@ function WhereToWatchTab({ data, scraped, onWatch, contentId, onLinkOpen }) {
             No matches found across aggregator sites.
           </div>
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             {scraped.results.map(r => (
-              <div
-                key={`${r.provider}-${r.site_url}`}
-                className="bg-bg3 border border-border hover:border-accent rounded-lg p-3 flex items-center gap-2 transition group relative"
-              >
-                <button
-                  onClick={() => onWatch(null, r.site_url, { inApp: true, siteName: r.provider_name })}
-                  className="flex-1 flex items-center gap-2 text-left min-w-0"
+              r.is_grouped ? (
+                <div
+                  key={r.provider}
+                  className="surface-elevated rounded-xl p-3 flex flex-col gap-2 md:col-span-2"
                 >
-                  {r.image && (
-                    <img
-                      src={r.image}
-                      className="w-10 h-14 rounded object-cover shrink-0"
-                      alt=""
-                      onError={e => { e.currentTarget.style.display = 'none'; }}
-                    />
-                  )}
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm text-white truncate group-hover:text-accent transition">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] bg-accent/20 text-accent px-2 py-0.5 rounded uppercase tracking-wider font-bold">
+                      One-click
+                    </span>
+                    <div className="text-sm text-white font-semibold flex-1">
                       {r.provider_name}
                     </div>
-                    <div className="text-xs text-muted truncate">{r.title}</div>
-                    <div className="text-[10px] text-green mt-0.5">
-                      ▶ Watch · {r.match_score}% match
-                    </div>
+                    <span className="text-[10px] text-muted">{r.note}</span>
                   </div>
-                </button>
-                <button
-                  onClick={(e) => { e.stopPropagation(); hideScraped(r); }}
-                  title="Wrong match? Hide this result"
-                  className="absolute top-1 right-1 w-6 h-6 rounded-full bg-bg4/80 hover:bg-red text-muted hover:text-white opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-xs"
+                  <div className="flex gap-2 flex-wrap">
+                    {r.variants.map(v => (
+                      <button
+                        key={v.provider}
+                        onClick={() => onWatch(null, v.site_url, { inApp: true, siteName: v.provider_name })}
+                        className="btn btn-secondary text-xs"
+                      >
+                        ▶ {v.provider_name}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div
+                  key={`${r.provider}-${r.site_url}`}
+                  className="surface-elevated rounded-xl p-3 flex items-center gap-2 transition group relative hover:border-accent/50"
                 >
-                  ✕
-                </button>
-              </div>
+                  <button
+                    onClick={() => onWatch(null, r.site_url, { inApp: true, siteName: r.provider_name })}
+                    className="flex-1 flex items-center gap-2 text-left min-w-0"
+                  >
+                    {r.image && (
+                      <img
+                        src={r.image}
+                        className="w-10 h-14 rounded object-cover shrink-0"
+                        alt=""
+                        onError={e => { e.currentTarget.style.display = 'none'; }}
+                      />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm text-white truncate group-hover:text-accent transition font-semibold">
+                        {r.provider_name}
+                      </div>
+                      <div className="text-xs text-muted truncate">{r.title}</div>
+                      <div className="text-[10px] text-green mt-0.5 font-medium">
+                        ▶ Watch · {r.match_score}% match
+                      </div>
+                    </div>
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); hideScraped(r); }}
+                    title="Wrong match? Hide this result"
+                    className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-surface-4/90 hover:bg-red text-muted hover:text-white opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-xs"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )
             ))}
           </div>
         )}

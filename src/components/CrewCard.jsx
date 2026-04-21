@@ -16,8 +16,8 @@ export default function CrewCard({ user }) {
 
   return (
     <div
-      className={`bg-bg2 border rounded-xl p-5 ${
-        isActive ? 'border-accent glow' : 'border-border'
+      className={`surface rounded-2xl p-6 transition ${
+        isActive ? 'ring-2 ring-accent glow' : 'hover:border-surface-4'
       }`}
     >
       <div className="flex items-start gap-4">

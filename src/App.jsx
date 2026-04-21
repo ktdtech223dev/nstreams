@@ -1,6 +1,5 @@
-import React, { useState, useEffect, createContext, useContext } from 'react';
-import TitleBar from './components/TitleBar';
-import Sidebar from './components/Sidebar';
+import React, { useState, useEffect, createContext, useContext, useRef } from 'react';
+import TopNav from './components/TopNav';
 import Home from './pages/Home';
 import Watchlist from './pages/Watchlist';
 import Browse from './pages/Browse';
@@ -24,10 +23,11 @@ export default function App() {
   const [activeUserId, setActiveUserId] = useState(1);
   const [modalContentId, setModalContentId] = useState(null);
   const [partyModalContentId, setPartyModalContentId] = useState(null);
-  const [playerSession, setPlayerSession] = useState(null); // {url,title,contentId,...}
+  const [playerSession, setPlayerSession] = useState(null);
   const [prevPage, setPrevPage] = useState('home');
   const [activeSessions, setActiveSessions] = useState([]);
   const [toast, setToast] = useState(null);
+  const searchRef = useRef(null);
 
   const activeUser = users.find(u => u.id === activeUserId);
 
@@ -90,6 +90,24 @@ export default function App() {
     });
   }, [activeUserId]);
 
+  // ⌘K / Ctrl+K shortcut: focus search on any page
+  useEffect(() => {
+    const onKey = (e) => {
+      const isK = e.key === 'k' || e.key === 'K';
+      if (isK && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        searchRef.current?.focus();
+        searchRef.current?.select?.();
+      }
+      if (e.key === '/' && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   async function refreshSessions() {
     try {
       const s = await api.activeSessions(activeUserId);
@@ -111,7 +129,6 @@ export default function App() {
     setPlayerSession(sessionObj);
     setPrevPage(page === 'player' ? prevPage : page);
     setPage('player');
-    // Close content modal if open
     setModalContentId(null);
     setPartyModalContentId(null);
   };
@@ -142,13 +159,14 @@ export default function App() {
     player: playerSession ? <Player session={playerSession} onClose={closePlayer} /> : null
   };
 
+  const chromeLess = page === 'player' || page === 'home';
+
   return (
     <AppContext.Provider value={ctx}>
       <PartyProvider showToast={showToast}>
         <div className="flex flex-col h-screen w-screen bg-bg">
-          <TitleBar />
+          <TopNav page={page} setPage={setPage} searchRef={searchRef} />
           <div className="flex flex-1 overflow-hidden">
-            <Sidebar page={page} setPage={setPage} />
             <main className={`flex-1 relative ${page === 'player' ? 'overflow-hidden' : 'overflow-y-auto'}`}>
               {activeSessions.length > 0 && page !== 'player' && (
                 <SessionBanner
@@ -160,8 +178,12 @@ export default function App() {
                 <div className="h-full animate-fade" key={page}>
                   {pages[page]}
                 </div>
+              ) : page === 'home' ? (
+                <div className="animate-fade" key={page}>
+                  {pages[page]}
+                </div>
               ) : (
-                <div className="p-8 animate-fade" key={page}>
+                <div className="px-10 pt-8 pb-16 animate-fade max-w-[1600px] mx-auto" key={page}>
                   {pages[page]}
                 </div>
               )}
@@ -185,7 +207,7 @@ export default function App() {
           <PartySidebar />
 
           {toast && (
-            <div className="fixed bottom-6 right-6 bg-accent text-white px-4 py-3 rounded-lg shadow-2xl animate-fade z-50">
+            <div className="fixed bottom-6 right-6 surface-glass text-white px-5 py-3 rounded-full shadow-lg animate-fade z-[100] font-medium text-sm border border-accent/30">
               {toast}
             </div>
           )}

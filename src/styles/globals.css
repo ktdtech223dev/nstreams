@@ -3,29 +3,56 @@
 @tailwind utilities;
 
 :root {
-  --bg: #080810;
-  --bg2: #0f0f1a;
-  --bg3: #16162a;
-  --bg4: #1e1e35;
+  /* Surfaces */
+  --bg: #050510;
+  --surface-1: #050510;
+  --surface-2: #0e0e1a;
+  --surface-3: #17172a;
+  --surface-4: #22223b;
+  --surface-glass: rgba(20, 20, 35, 0.72);
+  --bg2: #0e0e1a;
+  --bg3: #17172a;
+  --bg4: #22223b;
+
+  /* Brand + state */
   --accent: #6366f1;
   --accent2: #818cf8;
   --accent3: #4f46e5;
+  --accent-hot: #a78bfa;
   --gold: #f59e0b;
   --green: #10b981;
   --red: #ef4444;
   --blue: #3b82f6;
-  --text: #e2e8f0;
+
+  /* Text */
+  --text: #f1f5f9;
+  --text-dim: #cbd5e1;
   --muted: #64748b;
   --border: #1e1e35;
+  --border-soft: rgba(99, 102, 241, 0.12);
+
+  /* Crew */
   --keshawn: #FF69B4;
   --sean: #2E8B57;
   --amari: #FFD700;
   --dart: #722F37;
+
+  /* Radius */
+  --r-sm: 4px;
+  --r: 8px;
+  --r-lg: 12px;
+  --r-xl: 16px;
+  --r-2xl: 24px;
+
+  /* Shadow */
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.6);
+  --shadow-glow: 0 0 40px rgba(99, 102, 241, 0.35);
+  --shadow-glow-strong: 0 0 60px rgba(99, 102, 241, 0.55);
 }
 
-* {
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; }
 
 html, body, #root {
   height: 100%;
@@ -33,37 +60,41 @@ html, body, #root {
   background: var(--bg);
   color: var(--text);
   font-family: 'Outfit', system-ui, sans-serif;
+  font-feature-settings: 'ss01', 'ss02', 'cv11';
   overflow: hidden;
   user-select: none;
+  -webkit-font-smoothing: antialiased;
 }
 
-.font-display {
-  font-family: 'Bebas Neue', system-ui, sans-serif;
-  letter-spacing: 0.02em;
-}
+/* Typography scale */
+.font-display { font-family: 'Bebas Neue', system-ui, sans-serif; letter-spacing: 0.03em; }
 
-.drag-region {
-  -webkit-app-region: drag;
-}
-.no-drag {
-  -webkit-app-region: no-drag;
-}
+.display-xl { font-family: 'Bebas Neue', system-ui; font-size: 96px; line-height: 0.95; letter-spacing: 0.02em; }
+.display-lg { font-family: 'Bebas Neue', system-ui; font-size: 56px; line-height: 1.0; letter-spacing: 0.03em; }
+.display-md { font-family: 'Bebas Neue', system-ui; font-size: 36px; line-height: 1.05; letter-spacing: 0.035em; }
+.display-sm { font-family: 'Bebas Neue', system-ui; font-size: 24px; line-height: 1.1; letter-spacing: 0.04em; }
+
+.row-title { font-family: 'Bebas Neue', system-ui; font-size: 28px; line-height: 1; letter-spacing: 0.04em; color: var(--text); }
+
+/* Drag regions */
+.drag-region { -webkit-app-region: drag; }
+.no-drag { -webkit-app-region: no-drag; }
 
 /* Scrollbars */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-::-webkit-scrollbar-track {
-  background: var(--bg);
-}
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
-  background: var(--bg4);
-  border-radius: 4px;
+  background: var(--surface-4);
+  border-radius: 99px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
-::-webkit-scrollbar-thumb:hover {
-  background: var(--accent3);
-}
+::-webkit-scrollbar-thumb:hover { background: var(--accent3); background-clip: padding-box; }
+
+/* Horizontal row scrollbars — more subtle */
+.row-scroll::-webkit-scrollbar { height: 6px; }
+.row-scroll::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); }
+.row-scroll:hover::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.16); }
 
 /* Status dot colors */
 .status-watching { background: var(--green); }
@@ -72,82 +103,169 @@ html, body, #root {
 .status-on_hold { background: var(--gold); }
 .status-dropped { background: var(--red); }
 
-/* Card hover */
-.card-hover {
-  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
-}
-.card-hover:hover {
-  transform: scale(1.04);
-  box-shadow: 0 0 0 2px var(--accent), 0 12px 40px rgba(99, 102, 241, 0.35);
-  border-color: var(--accent);
-  z-index: 5;
-}
-
-/* Input */
-.input {
-  background: var(--bg3);
-  border: 1px solid var(--border);
-  color: var(--text);
-  padding: 0.5rem 0.75rem;
-  border-radius: 0.5rem;
-  outline: none;
-  transition: border-color 0.2s;
-}
-.input:focus {
-  border-color: var(--accent);
-}
-
-/* Button */
+/* ──────────── BUTTON SYSTEM ──────────── */
 .btn {
-  padding: 0.5rem 1rem;
-  border-radius: 0.5rem;
-  font-weight: 500;
-  transition: all 0.2s;
-  cursor: pointer;
-  border: none;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 0.5rem;
+  padding: 0.55rem 1.1rem;
+  border-radius: 999px;
+  font-weight: 600;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  border: none;
+  transition: transform 0.15s ease, background 0.2s ease, box-shadow 0.2s ease, color 0.2s ease;
+  white-space: nowrap;
+  outline: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
-.btn-primary {
-  background: var(--accent);
-  color: white;
+.btn:focus-visible { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--accent); }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn:active:not(:disabled) { transform: translateY(1px); }
+
+.btn-primary { background: var(--accent); color: white; }
+.btn-primary:hover:not(:disabled) { background: var(--accent3); box-shadow: var(--shadow-glow); }
+
+.btn-secondary { background: rgba(255,255,255,0.14); color: var(--text); backdrop-filter: blur(8px); }
+.btn-secondary:hover:not(:disabled) { background: rgba(255,255,255,0.22); }
+
+.btn-ghost { background: transparent; color: var(--text-dim); border: 1px solid var(--border); }
+.btn-ghost:hover:not(:disabled) { background: var(--surface-3); color: var(--text); border-color: var(--surface-4); }
+
+.btn-hero {
+  padding: 0.85rem 1.8rem;
+  font-size: 16px;
+  border-radius: 999px;
 }
-.btn-primary:hover {
-  background: var(--accent3);
+
+.btn-icon {
+  width: 38px; height: 38px;
+  padding: 0;
+  border-radius: 999px;
 }
-.btn-ghost {
-  background: transparent;
-  color: var(--text);
+
+.btn-icon-sm {
+  width: 32px; height: 32px;
+  padding: 0;
+  border-radius: 999px;
+}
+
+/* ──────────── FORM INPUTS ──────────── */
+.input {
+  background: var(--surface-3);
   border: 1px solid var(--border);
+  color: var(--text);
+  padding: 0.55rem 0.85rem;
+  border-radius: var(--r);
+  outline: none;
+  font-size: 14px;
+  transition: border-color 0.15s, background 0.15s;
 }
-.btn-ghost:hover {
-  background: var(--bg3);
+.input:hover { background: var(--surface-4); }
+.input:focus { border-color: var(--accent); background: var(--surface-3); }
+.input::placeholder { color: var(--muted); }
+
+/* ──────────── SURFACES ──────────── */
+.surface { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-xl); }
+.surface-elevated { background: var(--surface-3); border: 1px solid var(--border-soft); border-radius: var(--r-xl); }
+.surface-glass {
+  background: var(--surface-glass);
+  backdrop-filter: blur(24px) saturate(150%);
+  -webkit-backdrop-filter: blur(24px) saturate(150%);
+  border: 1px solid rgba(255,255,255,0.06);
 }
 
-.glow {
-  box-shadow: 0 0 20px rgba(99, 102, 241, 0.4);
+/* ──────────── NETFLIX-STYLE CARD ──────────── */
+.card-netflix {
+  position: relative;
+  cursor: pointer;
+  border-radius: var(--r);
+  overflow: visible;
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), z-index 0s 0.3s;
+  will-change: transform;
+  transform-origin: center center;
+}
+.card-netflix:hover {
+  transform: scale(1.08);
+  z-index: 10;
+  transition-delay: 0.15s, 0s;
+}
+.card-netflix .card-base {
+  border-radius: var(--r);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow 0.3s ease;
+}
+.card-netflix:hover .card-base {
+  box-shadow: var(--shadow-lg), 0 0 0 2px rgba(99,102,241,0.4);
+}
+.card-netflix .card-overlay {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease 0.05s;
+}
+.card-netflix:hover .card-overlay {
+  opacity: 1;
+  pointer-events: auto;
+  transition-delay: 0.2s;
 }
 
-/* Animations */
+/* Adjust scale for row-edge cards to prevent clipping */
+.card-netflix.edge-left:hover { transform: scale(1.08) translateX(4%); transform-origin: left center; }
+.card-netflix.edge-right:hover { transform: scale(1.08) translateX(-4%); transform-origin: right center; }
+
+/* ──────────── ANIMATIONS ──────────── */
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(10px); }
+  from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
-.animate-fade {
-  animation: fadeIn 0.3s ease;
+.animate-fade { animation: fadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1); }
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
 }
+.animate-slide-up { animation: slideUp 0.5s cubic-bezier(0.16, 1, 0.3, 1); }
 
 @keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 20px rgba(99, 102, 241, 0.4); }
-  50% { box-shadow: 0 0 30px rgba(99, 102, 241, 0.7); }
+  0%,100% { box-shadow: 0 0 20px rgba(99,102,241,0.4); }
+  50%     { box-shadow: 0 0 30px rgba(99,102,241,0.7); }
 }
-.pulse-glow {
-  animation: pulse-glow 2s infinite;
-}
+.pulse-glow { animation: pulse-glow 2s infinite; }
 
 @keyframes float {
   0%   { opacity: 0; transform: translateY(0) scale(0.6); }
   15%  { opacity: 1; transform: translateY(-30px) scale(1.2); }
   100% { opacity: 0; transform: translateY(-260px) scale(0.8); }
 }
+
+@keyframes shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.skeleton {
+  background: linear-gradient(90deg, var(--surface-2) 0%, var(--surface-3) 50%, var(--surface-2) 100%);
+  background-size: 400px 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+
+/* Glow utility */
+.glow { box-shadow: var(--shadow-glow); }
+.glow-strong { box-shadow: var(--shadow-glow-strong); }
+
+/* Hide scrollbar completely */
+.scrollbar-none::-webkit-scrollbar { display: none; }
+.scrollbar-none { scrollbar-width: none; }
+
+/* Gradient masks */
+.fade-bottom {
+  mask-image: linear-gradient(180deg, black 0%, black 60%, transparent 100%);
+  -webkit-mask-image: linear-gradient(180deg, black 0%, black 60%, transparent 100%);
+}
+
+/* Focus ring universal */
+:focus { outline: none; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
