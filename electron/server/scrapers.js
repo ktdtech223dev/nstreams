@@ -71,34 +71,55 @@ function yearBonus(contentYear, resultTitle) {
 }
 
 // ─── AniList resolver ────────────────────────────────────────
+// Two-phase: direct idMal lookup (100% reliable for MAL-imported shows)
+// first, fall back to title search only when we have no MAL id.
 async function resolveAnilistId(content) {
   if (content.anilist_id) return content.anilist_id;
-  const query = `
-    query ($search: String, $malId: Int) {
+
+  // Phase 1 — direct MAL → AniList ID lookup. AniList stores idMal
+  // for nearly every anime so this rarely misses.
+  if (content.mal_id) {
+    const directQuery = `
+      query ($idMal: Int) {
+        Media(idMal: $idMal, type: ANIME) {
+          id
+          idMal
+          title { romaji english }
+        }
+      }`;
+    try {
+      const res = await axios.post(
+        'https://graphql.anilist.co',
+        { query: directQuery, variables: { idMal: content.mal_id } },
+        { headers: { 'Content-Type': 'application/json' }, timeout: 8000 }
+      );
+      const m = res.data?.data?.Media;
+      if (m?.id) return m.id;
+    } catch (e) {
+      // fall through to title search below
+    }
+  }
+
+  // Phase 2 — title search fallback for content without a mal_id
+  const searchQuery = `
+    query ($search: String) {
       Page(perPage: 5) {
         media(search: $search, type: ANIME, sort: SEARCH_MATCH) {
           id
           idMal
           title { romaji english native }
-          episodes
-          coverImage { medium }
-          startDate { year }
         }
       }
     }`;
   try {
     const res = await axios.post(
       'https://graphql.anilist.co',
-      { query, variables: { search: content.title, malId: content.mal_id || null } },
+      { query: searchQuery, variables: { search: content.title } },
       { headers: { 'Content-Type': 'application/json' }, timeout: 8000 }
     );
     const items = res.data?.data?.Page?.media || [];
     if (!items.length) return null;
 
-    if (content.mal_id) {
-      const mal = items.find(m => m.idMal === content.mal_id);
-      if (mal) return mal.id;
-    }
     items.forEach(m => {
       const best = Math.max(
         similarity(content.title, m.title.english),
@@ -109,6 +130,83 @@ async function resolveAnilistId(content) {
     });
     items.sort((a, b) => b._score - a._score);
     return items[0]._score >= 0.6 ? items[0].id : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// Fetch episode-level metadata from AniList for anime without a TMDB
+// match. Returns { total_episodes, episodes: [{episode_number, name,
+// thumbnail, runtime}] } — shape matches tmdb.getSeason for the
+// EpisodeTracker consumer.
+async function fetchAnilistEpisodes(anilistId, fallbackTotal = null) {
+  const query = `
+    query ($id: Int) {
+      Media(id: $id, type: ANIME) {
+        id
+        episodes
+        duration
+        coverImage { medium }
+        streamingEpisodes {
+          title
+          thumbnail
+          url
+          site
+        }
+      }
+    }`;
+  try {
+    const res = await axios.post(
+      'https://graphql.anilist.co',
+      { query, variables: { id: anilistId } },
+      { headers: { 'Content-Type': 'application/json' }, timeout: 8000 }
+    );
+    const m = res.data?.data?.Media;
+    if (!m) return null;
+
+    const total = m.episodes || fallbackTotal || 0;
+    const runtime = m.duration || null;
+
+    // Map streamingEpisodes to a lookup by parsed episode number
+    const byNum = {};
+    for (const se of (m.streamingEpisodes || [])) {
+      // titles are usually "Episode 1 - The Beginning" or "1 - The Beginning"
+      const match = (se.title || '').match(/episode\s*(\d+)|^\s*(\d+)/i);
+      const num = match ? parseInt(match[1] || match[2]) : null;
+      if (num) {
+        byNum[num] = {
+          name: (se.title || '').replace(/^episode\s*\d+\s*[-:–]\s*/i, '').replace(/^\s*\d+\s*[-:–]\s*/, '') || null,
+          thumbnail: se.thumbnail || null
+        };
+      }
+    }
+
+    const episodes = [];
+    for (let i = 1; i <= total; i++) {
+      const meta = byNum[i] || {};
+      episodes.push({
+        id: `anilist-${anilistId}-${i}`,
+        episode_number: i,
+        season_number: 1,
+        name: meta.name || `Episode ${i}`,
+        overview: null,
+        air_date: null,
+        runtime,
+        rating: null,
+        still_path: meta.thumbnail || null,
+        still_path_large: meta.thumbnail || null
+      });
+    }
+
+    return {
+      season_number: 1,
+      name: 'Season 1',
+      overview: null,
+      poster_path: m.coverImage?.medium || null,
+      episode_count: episodes.length,
+      episodes,
+      source: 'anilist'
+    };
   } catch (e) {
     return null;
   }
@@ -311,5 +409,5 @@ async function resolveAvailability(contentId, { userId, season, episode } = {}) 
 }
 
 module.exports = {
-  resolveAvailability, resolveAnilistId, similarity, PROVIDERS
+  resolveAvailability, resolveAnilistId, fetchAnilistEpisodes, similarity, PROVIDERS
 };

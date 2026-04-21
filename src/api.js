@@ -37,6 +37,7 @@ export const api = {
   advanceEpisode: (id) => req('POST', `/watchlist/${id}/advance`),
   getContent: (id, userId) => req('GET', `/content/${id}?user_id=${userId}`),
   getSeason: (contentId, n) => req('GET', `/content/${contentId}/season/${n}`),
+  getAnimeEpisodes: (contentId) => req('GET', `/content/${contentId}/anime-episodes`),
   addContent: (b) => req('POST', '/content', b),
   addContentManual: (b) => req('POST', '/content/manual', b),
   whereToWatch: (id) => req('GET', `/content/${id}/where-to-watch`),

@@ -34,15 +34,26 @@ export default function EpisodeTracker({ content, wl, update, onAdvance }) {
   const currentEp = wl?.current_episode || 0;
   const currentSeason = wl?.current_season || 1;
 
+  const isAnime = content.is_anime === 1 || content.type === 'anime';
+  const useAnilist = !content.tmdb_id && isAnime;
+
   useEffect(() => {
-    if (!content.id || !content.tmdb_id) return;
+    if (!content.id) return;
+    // Need either TMDB id (for per-season data) OR anime branch (AniList)
+    if (!content.tmdb_id && !isAnime) return;
+
     let cancelled = false;
     setLoading(true); setError(null);
-    api.getSeason(content.id, season)
+
+    const fetcher = useAnilist
+      ? api.getAnimeEpisodes(content.id)
+      : api.getSeason(content.id, season);
+
+    fetcher
       .then(d => { if (!cancelled) { setSeasonData(d); setLoading(false); } })
       .catch(e => { if (!cancelled) { setError(e.message); setLoading(false); } });
     return () => { cancelled = true; };
-  }, [content.id, content.tmdb_id, season]);
+  }, [content.id, content.tmdb_id, season, isAnime, useAnilist]);
 
   // Fetch all episode-progress rows once per content
   useEffect(() => {
@@ -54,18 +65,19 @@ export default function EpisodeTracker({ content, wl, update, onAdvance }) {
     }).catch(() => {});
   }, [content.id, activeUserId]);
 
-  // Movies + content without tmdb_id — fall back to simple message
-  if (!content.tmdb_id || content.type === 'movie') {
-    if (content.type === 'movie') {
-      return (
-        <div className="text-center py-16">
-          <div className="text-muted mb-4">Movies don't have episodes.</div>
-          <button onClick={() => update({ watch_status: 'completed' })} className="btn btn-primary">
-            <Check size={16} /> Mark as watched
-          </button>
-        </div>
-      );
-    }
+  // Movies: no episode grid needed
+  if (content.type === 'movie') {
+    return (
+      <div className="text-center py-16">
+        <div className="text-muted mb-4">Movies don't have episodes.</div>
+        <button onClick={() => update({ watch_status: 'completed' })} className="btn btn-primary">
+          <Check size={16} /> Mark as watched
+        </button>
+      </div>
+    );
+  }
+  // Non-anime TV shows without a TMDB id — no data source available
+  if (!content.tmdb_id && !isAnime) {
     return <div className="text-center py-12 text-muted">No episode data available for this title.</div>;
   }
 
@@ -212,8 +224,9 @@ export default function EpisodeTracker({ content, wl, update, onAdvance }) {
         <div className="h-full bg-accent transition-all" style={{ width: `${progressPct}%` }} />
       </div>
 
-      {/* Season selector */}
-      {totalSeasons > 1 && (
+      {/* Season selector — hidden in AniList mode (anime data comes
+          back as a single flat season) */}
+      {!useAnilist && totalSeasons > 1 && (
         <div className="flex gap-2 overflow-x-auto scrollbar-none">
           {Array.from({ length: totalSeasons }, (_, i) => i + 1).map(s => (
             <button

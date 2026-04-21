@@ -167,12 +167,22 @@ async function syncMALList(userId) {
     let content = db.prepare('SELECT * FROM content WHERE mal_id = ?').get(anime.id);
 
     if (!content) {
+      // Resolve the AniList id at import time so scrapers + episode
+      // tracker have it immediately. Best-effort: if AniList is slow
+      // we fall back to the one-shot backfill on first modal open.
+      let anilistId = null;
+      try {
+        const { resolveAnilistId } = require('./scrapers');
+        anilistId = await resolveAnilistId({ title: anime.title, mal_id: anime.id });
+      } catch (_) {}
+
       db.prepare(`
         INSERT OR IGNORE INTO content
-          (mal_id, title, type, poster_path, overview, total_episodes, is_anime)
-        VALUES (?, ?, 'anime', ?, ?, ?, 1)
+          (mal_id, anilist_id, title, type, poster_path, overview, total_episodes, is_anime)
+        VALUES (?, ?, ?, 'anime', ?, ?, ?, 1)
       `).run(
         anime.id,
+        anilistId,
         anime.title,
         anime.main_picture?.medium || null,
         anime.synopsis || null,

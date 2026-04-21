@@ -94,6 +94,19 @@ router.get('/content/:id', async (req, res) => {
       } catch (_) {}
     }
 
+    // Back-fill anilist_id for anime (MAL-imported shows typically land
+    // in our DB with only mal_id set; this makes scraping + episode
+    // metadata resolve on the first modal open).
+    if (!content.anilist_id && (content.is_anime === 1 || content.type === 'anime')) {
+      try {
+        const aid = await scrapers.resolveAnilistId(content);
+        if (aid) {
+          db.prepare('UPDATE content SET anilist_id = ? WHERE id = ?').run(aid, id);
+          content.anilist_id = aid;
+        }
+      } catch (_) {}
+    }
+
     let watchlist = null;
     if (user_id) {
       watchlist = db.prepare(
@@ -222,6 +235,53 @@ router.post('/content/:id/link-service', (req, res) => {
     `).run(user_id, id, JSON.stringify({ site_id }));
 
     res.json({ ok: true, id: info.lastInsertRowid });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/content/:id/anime-episodes
+// Episode list for anime that has no TMDB id (typically MAL-imported).
+// Resolves AniList id first (backfills to DB), then pulls episode
+// count + thumbnails from AniList.
+router.get('/content/:id/anime-episodes', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const db = getDB();
+    const content = db.prepare('SELECT * FROM content WHERE id = ?').get(id);
+    if (!content) return res.status(404).json({ error: 'Content not found' });
+
+    let anilistId = content.anilist_id;
+    if (!anilistId) {
+      anilistId = await scrapers.resolveAnilistId(content);
+      if (anilistId) {
+        try { db.prepare('UPDATE content SET anilist_id = ? WHERE id = ?').run(anilistId, id); } catch {}
+      }
+    }
+    if (!anilistId) {
+      // Last-resort placeholder list from whatever total_episodes we know
+      const n = content.total_episodes || 0;
+      if (!n) return res.json({ season_number: 1, episode_count: 0, episodes: [], source: 'placeholder' });
+      const episodes = [];
+      for (let i = 1; i <= n; i++) {
+        episodes.push({
+          id: `placeholder-${id}-${i}`,
+          episode_number: i,
+          season_number: 1,
+          name: `Episode ${i}`,
+          overview: null, air_date: null, runtime: null, rating: null,
+          still_path: null, still_path_large: null
+        });
+      }
+      return res.json({
+        season_number: 1, name: 'Season 1', episode_count: n,
+        episodes, source: 'placeholder'
+      });
+    }
+
+    const data = await scrapers.fetchAnilistEpisodes(anilistId, content.total_episodes);
+    if (!data) return res.json({ season_number: 1, episode_count: 0, episodes: [], source: 'anilist-empty' });
+    res.json(data);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
