@@ -310,6 +310,7 @@ let playerView = null;
 let playerState = {
   url: null, title: null, partyId: null,
   contentId: null, userId: null, watchlistId: null,
+  season: null, episode: null, provider: null,
   position: 0, duration: 0
 };
 let positionSaveTimer = null;
@@ -333,18 +334,42 @@ function destroyPlayerView(savePosition = true) {
 }
 
 function savePlayerPosition(immediate = false) {
-  const { watchlistId, position, duration, url } = playerState;
-  if (!watchlistId || !position) return;
+  const { watchlistId, position, duration, url, userId, contentId, season, episode, provider } = playerState;
+  if (!position) return;
   const db = require('./server/database').getDB();
   try {
-    db.prepare(`
-      UPDATE watchlist SET
-        last_position_seconds = ?,
-        last_duration_seconds = ?,
-        last_site_url = ?,
-        updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(position, duration || 0, url || null, watchlistId);
+    if (watchlistId) {
+      // Keep show-level last site url for the Hero billboard + Continue Watching card
+      db.prepare(`
+        UPDATE watchlist SET
+          last_position_seconds = ?,
+          last_duration_seconds = ?,
+          last_site_url = ?,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(position, duration || 0, url || null, watchlistId);
+    }
+    // Per-episode progress when we know the S/E
+    if (userId && contentId && season && episode) {
+      db.prepare(`
+        INSERT INTO episode_progress
+          (user_id, content_id, season_number, episode_number,
+           last_site_url, last_provider,
+           last_position_seconds, last_duration_seconds, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(user_id, content_id, season_number, episode_number)
+        DO UPDATE SET
+          last_site_url = excluded.last_site_url,
+          last_provider = excluded.last_provider,
+          last_position_seconds = excluded.last_position_seconds,
+          last_duration_seconds = excluded.last_duration_seconds,
+          updated_at = CURRENT_TIMESTAMP
+      `).run(
+        userId, contentId, season, episode,
+        url || null, provider || null,
+        position, duration || 0
+      );
+    }
   } catch (e) { if (immediate) console.warn('[player] position save failed:', e.message); }
 }
 
@@ -352,6 +377,7 @@ ipcMain.handle('player:open', async (_, opts) => {
   const {
     url, title, partyId = null,
     contentId = null, userId = null, watchlistId = null,
+    season = null, episode = null, provider = null,
     bounds, resumeAt = 0
   } = opts;
 
@@ -474,6 +500,7 @@ ipcMain.handle('player:open', async (_, opts) => {
   playerState = {
     url, title, partyId,
     contentId, userId, watchlistId,
+    season, episode, provider,
     position: resumeAt, duration: 0
   };
 

@@ -384,6 +384,72 @@ router.post('/watchlist/:id/position', (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ─── Episode-level progress ────────────────────────────────────
+// Per (user × content × season × episode) last_site_url + position.
+// Used so resuming an episode keeps the source sticky per episode.
+
+// GET all progress rows for a show
+router.get('/episodes/progress/:userId/:contentId', (req, res) => {
+  const rows = getDB().prepare(`
+    SELECT season_number, episode_number, last_site_url, last_provider,
+           last_position_seconds, last_duration_seconds, completed, updated_at
+    FROM episode_progress
+    WHERE user_id = ? AND content_id = ?
+  `).all(req.params.userId, req.params.contentId);
+  res.json(rows);
+});
+
+// GET a single episode's progress
+router.get('/episodes/progress/:userId/:contentId/:season/:episode', (req, res) => {
+  const row = getDB().prepare(`
+    SELECT * FROM episode_progress
+    WHERE user_id = ? AND content_id = ? AND season_number = ? AND episode_number = ?
+  `).get(req.params.userId, req.params.contentId, req.params.season, req.params.episode);
+  res.json(row || null);
+});
+
+// POST upsert progress (session start or periodic heartbeat)
+router.post('/episodes/progress', (req, res) => {
+  try {
+    const {
+      user_id, content_id, season_number, episode_number,
+      last_site_url, last_provider,
+      last_position_seconds, last_duration_seconds,
+      completed
+    } = req.body;
+    if (!user_id || !content_id || !season_number || !episode_number) {
+      return res.status(400).json({ error: 'user_id, content_id, season, episode required' });
+    }
+    getDB().prepare(`
+      INSERT INTO episode_progress
+        (user_id, content_id, season_number, episode_number,
+         last_site_url, last_provider,
+         last_position_seconds, last_duration_seconds, completed, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(user_id, content_id, season_number, episode_number)
+      DO UPDATE SET
+        last_site_url = COALESCE(excluded.last_site_url, episode_progress.last_site_url),
+        last_provider = COALESCE(excluded.last_provider, episode_progress.last_provider),
+        last_position_seconds = CASE
+          WHEN excluded.last_position_seconds > 0 THEN excluded.last_position_seconds
+          ELSE episode_progress.last_position_seconds END,
+        last_duration_seconds = CASE
+          WHEN excluded.last_duration_seconds > 0 THEN excluded.last_duration_seconds
+          ELSE episode_progress.last_duration_seconds END,
+        completed = COALESCE(excluded.completed, episode_progress.completed),
+        updated_at = CURRENT_TIMESTAMP
+    `).run(
+      user_id, content_id, season_number, episode_number,
+      last_site_url || null, last_provider || null,
+      last_position_seconds || 0, last_duration_seconds || 0,
+      completed ? 1 : 0
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Position by (user, content) — what the Player queries on open
 router.get('/watchlist/position/:userId/:contentId', (req, res) => {
   const row = getDB().prepare(

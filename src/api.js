@@ -55,13 +55,22 @@ export const api = {
   discoverTrending: (type = 'all') => req('GET', `/discover/trending?type=${type}`),
   linkableSites: () => req('GET', '/sites/linkable'),
   tmdbStatus: () => req('GET', '/tmdb/status'),
-  scrapeAvailability: (contentId, userId) => req('GET',
-    `/scrape/availability/${contentId}${userId ? `?user_id=${userId}` : ''}`),
+  scrapeAvailability: (contentId, userId, opts = {}) => {
+    const qs = new URLSearchParams();
+    if (userId) qs.set('user_id', userId);
+    if (opts.season) qs.set('season', opts.season);
+    if (opts.episode) qs.set('episode', opts.episode);
+    const q = qs.toString();
+    return req('GET', `/scrape/availability/${contentId}${q ? `?${q}` : ''}`);
+  },
   clearScrapeCache: () => req('POST', '/scrape/clear-cache'),
   hideScrapeResult: (b) => req('POST', '/scrape/hide', b),
   unhideScrapeResult: (b) => req('POST', '/scrape/unhide', b),
   getPosition: (userId, contentId) => req('GET', `/watchlist/position/${userId}/${contentId}`),
   savePosition: (id, b) => req('POST', `/watchlist/${id}/position`, b),
+  episodeProgressAll: (userId, contentId) => req('GET', `/episodes/progress/${userId}/${contentId}`),
+  episodeProgressOne: (userId, contentId, s, e) => req('GET', `/episodes/progress/${userId}/${contentId}/${s}/${e}`),
+  saveEpisodeProgress: (b) => req('POST', '/episodes/progress', b),
   redirectUris: () => req('GET', '/sync/redirect-uris'),
   malConnect: (userId) => req('POST', '/sync/mal/connect', { userId }),
   malSync: (userId) => req('POST', `/sync/mal/${userId}`),

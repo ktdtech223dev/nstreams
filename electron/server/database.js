@@ -155,6 +155,22 @@ function migrate() {
   }
 
   db.exec(`
+    CREATE TABLE IF NOT EXISTS episode_progress (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER REFERENCES users(id),
+      content_id INTEGER REFERENCES content(id),
+      season_number INTEGER NOT NULL,
+      episode_number INTEGER NOT NULL,
+      last_site_url TEXT,
+      last_provider TEXT,
+      last_position_seconds REAL DEFAULT 0,
+      last_duration_seconds REAL DEFAULT 0,
+      completed INTEGER DEFAULT 0,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(user_id, content_id, season_number, episode_number)
+    );
+    CREATE INDEX IF NOT EXISTS idx_epprog_show ON episode_progress(user_id, content_id);
+
     CREATE TABLE IF NOT EXISTS scrape_blacklist (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       content_id INTEGER REFERENCES content(id),
