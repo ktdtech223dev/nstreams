@@ -1,62 +1,101 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { Play, Check, Clock, Calendar, Star, Film } from 'lucide-react';
+import api from '../api';
+import { useApp } from '../App';
+
+function fmtDate(s) {
+  if (!s) return null;
+  try { return new Date(s + 'T00:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }); }
+  catch { return s; }
+}
 
 export default function EpisodeTracker({ content, wl, update, onAdvance }) {
+  const { activeUserId, openPlayer } = useApp();
   const totalSeasons = content.total_seasons || 1;
   const totalEp = content.total_episodes || 0;
   const [season, setSeason] = useState(wl?.current_season || 1);
+  const [seasonData, setSeasonData] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
 
-  // Estimate episodes per season
-  const epsPerSeason = totalSeasons ? Math.ceil(totalEp / totalSeasons) : totalEp;
   const currentEp = wl?.current_episode || 0;
+  const currentSeason = wl?.current_season || 1;
 
-  if (!totalEp) {
-    return (
-      <div className="text-center py-12">
-        <div className="text-muted">No episode data for this title.</div>
-        {content.type === 'movie' && (
+  useEffect(() => {
+    if (!content.id || !content.tmdb_id) return;
+    let cancelled = false;
+    setLoading(true); setError(null);
+    api.getSeason(content.id, season)
+      .then(d => { if (!cancelled) { setSeasonData(d); setLoading(false); } })
+      .catch(e => { if (!cancelled) { setError(e.message); setLoading(false); } });
+    return () => { cancelled = true; };
+  }, [content.id, content.tmdb_id, season]);
+
+  // Movies + content without tmdb_id — fall back to simple numbered grid
+  if (!content.tmdb_id || content.type === 'movie') {
+    if (content.type === 'movie') {
+      return (
+        <div className="text-center py-16">
+          <div className="text-muted mb-4">Movies don't have episodes.</div>
           <button
             onClick={() => update({ watch_status: 'completed' })}
-            className="btn btn-primary mt-4"
+            className="btn btn-primary"
           >
-            Mark Movie Watched
+            <Check size={16} /> Mark as watched
           </button>
-        )}
-      </div>
-    );
+        </div>
+      );
+    }
+    return <div className="text-center py-12 text-muted">No episode data available for this title.</div>;
+  }
+
+  const watchedCount = wl?.total_watched_episodes || 0;
+  const progressPct = totalEp ? Math.min(100, (watchedCount / totalEp) * 100) : 0;
+
+  async function advance() {
+    if (!wl) {
+      await update({ watch_status: 'watching' });
+    } else {
+      onAdvance?.();
+    }
+  }
+
+  function pickEpisode(ep) {
+    update({ current_season: season, current_episode: ep.episode_number });
   }
 
   return (
     <div className="space-y-6">
+      {/* Progress header */}
       <div className="flex items-center justify-between">
         <div>
-          <div className="text-sm text-muted uppercase tracking-wider">Progress</div>
-          <div className="font-display text-3xl text-white">
-            S{wl?.current_season || 1}E{currentEp}
-            <span className="text-muted text-xl"> / {totalEp} eps</span>
+          <div className="text-xs uppercase tracking-[.15em] text-muted">Progress</div>
+          <div className="display-md text-white">
+            S{currentSeason}E{currentEp}
+            <span className="text-muted text-2xl ml-2">/ {totalEp} eps</span>
           </div>
         </div>
-        <button onClick={onAdvance} className="btn btn-primary text-base px-6 py-3 glow">
-          + Advance Episode
+        <button onClick={advance} className="btn btn-primary btn-hero">
+          <Play size={16} fill="currentColor" /> Advance Episode
         </button>
       </div>
 
       {/* Progress bar */}
-      <div className="h-2 bg-bg3 rounded-full overflow-hidden">
-        <div
-          className="h-full bg-accent transition-all"
-          style={{ width: `${Math.min(100, ((wl?.total_watched_episodes || 0) / totalEp) * 100)}%` }}
-        />
+      <div className="h-1.5 bg-surface-3 rounded-full overflow-hidden">
+        <div className="h-full bg-accent transition-all" style={{ width: `${progressPct}%` }} />
       </div>
 
       {/* Season selector */}
       {totalSeasons > 1 && (
-        <div className="flex gap-2 overflow-x-auto">
+        <div className="flex gap-2 overflow-x-auto scrollbar-none">
           {Array.from({ length: totalSeasons }, (_, i) => i + 1).map(s => (
             <button
               key={s}
               onClick={() => setSeason(s)}
-              className={`px-4 py-2 rounded-lg text-sm shrink-0 transition ${
-                s === season ? 'bg-accent text-white' : 'bg-bg3 text-muted hover:bg-bg4'
+              className={`px-4 py-2 rounded-full text-sm shrink-0 transition font-semibold ${
+                s === season
+                  ? 'bg-accent text-white'
+                  : 'bg-surface-2 text-muted hover:bg-surface-3 hover:text-white'
               }`}
             >
               Season {s}
@@ -65,42 +104,130 @@ export default function EpisodeTracker({ content, wl, update, onAdvance }) {
         </div>
       )}
 
-      {/* Episode grid */}
-      <div className="grid grid-cols-8 gap-2">
-        {Array.from({ length: epsPerSeason }, (_, i) => i + 1).map(ep => {
-          const isWatched = season < (wl?.current_season || 1) ||
-            (season === (wl?.current_season || 1) && ep <= currentEp);
-          const isCurrent = season === (wl?.current_season || 1) && ep === currentEp;
-          return (
-            <button
-              key={ep}
-              onClick={() => update({ current_season: season, current_episode: ep })}
-              className={`aspect-square rounded text-xs font-medium transition ${
-                isCurrent
-                  ? 'bg-accent text-white ring-2 ring-accent2'
-                  : isWatched
-                  ? 'bg-green/30 text-green'
-                  : 'bg-bg3 text-muted hover:bg-bg4'
-              }`}
-            >
-              {ep}
-            </button>
-          );
-        })}
-      </div>
+      {/* Loading / error */}
+      {loading && (
+        <div className="space-y-3">
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className="skeleton h-24 rounded-xl" />
+          ))}
+        </div>
+      )}
+      {error && (
+        <div className="surface rounded-xl p-4 text-red text-sm">
+          Failed to load episodes: {error}
+        </div>
+      )}
 
-      <div className="flex gap-3">
-        <button
-          onClick={() => update({
-            current_season: season,
-            current_episode: epsPerSeason,
-            total_watched_episodes: epsPerSeason * season
+      {/* Episode list */}
+      {seasonData && !loading && (
+        <div className="space-y-2">
+          {seasonData.episodes.map(ep => {
+            const isCurrent = season === currentSeason && ep.episode_number === currentEp;
+            const isWatched = season < currentSeason ||
+              (season === currentSeason && ep.episode_number <= currentEp);
+            return (
+              <div
+                key={ep.id}
+                onClick={() => pickEpisode(ep)}
+                className={`group surface-elevated rounded-xl p-3 cursor-pointer transition flex gap-4 ${
+                  isCurrent
+                    ? 'ring-2 ring-accent glow'
+                    : 'hover:border-accent/40'
+                }`}
+              >
+                {/* Thumbnail */}
+                <div className="relative shrink-0 w-40 h-24 rounded-lg overflow-hidden bg-surface-3">
+                  {ep.still_path ? (
+                    <img
+                      src={ep.still_path}
+                      alt={ep.name}
+                      className="absolute inset-0 w-full h-full object-cover"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <Film size={24} className="text-muted" />
+                    </div>
+                  )}
+                  {/* Watched tint */}
+                  {isWatched && !isCurrent && (
+                    <div className="absolute inset-0 bg-black/55 flex items-center justify-center">
+                      <Check size={24} className="text-green" strokeWidth={3} />
+                    </div>
+                  )}
+                  {/* Play hover */}
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/40 transition">
+                    <div className="opacity-0 group-hover:opacity-100 transition w-10 h-10 rounded-full bg-white/95 text-black flex items-center justify-center shadow-lg">
+                      <Play size={16} fill="currentColor" />
+                    </div>
+                  </div>
+                  {/* Episode number badge */}
+                  <div className="absolute bottom-1 left-1 bg-black/85 text-white text-[11px] px-1.5 py-0.5 rounded font-bold">
+                    E{ep.episode_number}
+                  </div>
+                </div>
+
+                {/* Details */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-start gap-2 mb-1">
+                    <div className="flex-1 min-w-0">
+                      <div className={`font-semibold truncate ${isCurrent ? 'text-accent' : 'text-white'}`}>
+                        {ep.episode_number}. {ep.name || `Episode ${ep.episode_number}`}
+                      </div>
+                      <div className="flex items-center gap-3 text-[11px] text-muted mt-0.5">
+                        {ep.runtime > 0 && (
+                          <span className="flex items-center gap-1">
+                            <Clock size={10} />{ep.runtime}m
+                          </span>
+                        )}
+                        {ep.air_date && (
+                          <span className="flex items-center gap-1">
+                            <Calendar size={10} />{fmtDate(ep.air_date)}
+                          </span>
+                        )}
+                        {ep.rating > 0 && (
+                          <span className="flex items-center gap-1 text-gold">
+                            <Star size={10} fill="currentColor" />{ep.rating.toFixed(1)}
+                          </span>
+                        )}
+                        {isCurrent && (
+                          <span className="bg-accent/25 text-accent px-1.5 py-0.5 rounded uppercase tracking-wider font-bold text-[9px]">
+                            Up next
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  {ep.overview && (
+                    <p className="text-sm text-text-dim line-clamp-2 leading-snug">
+                      {ep.overview}
+                    </p>
+                  )}
+                  {!ep.overview && (
+                    <p className="text-sm text-muted italic">No description available.</p>
+                  )}
+                </div>
+              </div>
+            );
           })}
-          className="btn btn-ghost"
-        >
-          Mark Season Complete
-        </button>
-      </div>
+        </div>
+      )}
+
+      {/* Mark season complete */}
+      {seasonData && (
+        <div className="flex gap-3 pt-2">
+          <button
+            onClick={() => update({
+              current_season: season,
+              current_episode: seasonData.episodes.length,
+              total_watched_episodes: seasonData.episodes.length * season
+            })}
+            className="btn btn-ghost"
+          >
+            <Check size={14} /> Mark Season {season} Complete
+          </button>
+        </div>
+      )}
     </div>
   );
 }

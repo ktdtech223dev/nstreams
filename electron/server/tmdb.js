@@ -169,7 +169,35 @@ async function trending(window = 'week', type = 'all') {
   return res.data.results.filter(r => r.poster_path).map(formatResult);
 }
 
+// Per-season episode list
+async function getSeason(tvId, seasonNumber) {
+  const res = await axios.get(`${BASE}/tv/${tvId}/season/${seasonNumber}`, {
+    params: { api_key: getKey(), language: 'en-US' }
+  });
+  const data = res.data;
+  const episodes = (data.episodes || []).map(e => ({
+    id: e.id,
+    episode_number: e.episode_number,
+    season_number: e.season_number,
+    name: e.name,
+    overview: e.overview,
+    air_date: e.air_date,
+    runtime: e.runtime,
+    rating: e.vote_average,
+    still_path: e.still_path ? `${IMG}w300${e.still_path}` : null,
+    still_path_large: e.still_path ? `${IMG}w500${e.still_path}` : null
+  }));
+  return {
+    season_number: data.season_number,
+    name: data.name,
+    overview: data.overview,
+    poster_path: data.poster_path ? `${IMG}w300${data.poster_path}` : null,
+    episode_count: episodes.length,
+    episodes
+  };
+}
+
 module.exports = {
-  search, getDetails, discoverByProvider, trending,
+  search, getDetails, discoverByProvider, trending, getSeason,
   getProviderIdForSite, PROVIDER_MAP
 };

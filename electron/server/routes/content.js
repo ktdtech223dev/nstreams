@@ -215,6 +215,29 @@ router.post('/content/:id/link-service', (req, res) => {
   }
 });
 
+// GET /api/content/:id/season/:n — episodes list from TMDB
+const SEASON_CACHE = new Map();
+const SEASON_TTL = 6 * 60 * 60 * 1000;
+router.get('/content/:id/season/:n', async (req, res) => {
+  try {
+    const { id, n } = req.params;
+    const db = getDB();
+    const content = db.prepare('SELECT * FROM content WHERE id = ?').get(id);
+    if (!content) return res.status(404).json({ error: 'Content not found' });
+    if (!content.tmdb_id) return res.status(400).json({ error: 'No TMDB id on this content' });
+
+    const key = `${content.tmdb_id}:${n}`;
+    const cached = SEASON_CACHE.get(key);
+    if (cached && Date.now() - cached.ts < SEASON_TTL) return res.json(cached.data);
+
+    const season = await tmdb.getSeason(content.tmdb_id, parseInt(n));
+    SEASON_CACHE.set(key, { ts: Date.now(), data: season });
+    res.json(season);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // GET /api/discover/trending?type=all|tv|movie
 router.get('/discover/trending', async (req, res) => {
   try {
