@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  Home, Compass, Bookmark, Users, Globe,
+  Home, Compass, Bookmark, Users, Globe, Trophy,
   Search, X, Minus, Square, Check, ArrowRight
 } from 'lucide-react';
 import { useApp } from '../App';
@@ -12,6 +12,7 @@ const NAV = [
   { id: 'browse',     label: 'Browse',   icon: Compass },
   { id: 'watchlist',  label: 'My List',  icon: Bookmark },
   { id: 'crew',       label: 'Crew',     icon: Users },
+  { id: 'sports',     label: 'Sports',   icon: Trophy },
   { id: 'sites',      label: 'Sites',    icon: Globe }
 ];
 

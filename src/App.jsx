@@ -5,6 +5,7 @@ import Watchlist from './pages/Watchlist';
 import Browse from './pages/Browse';
 import Sites from './pages/Sites';
 import Crew from './pages/Crew';
+import Sports from './pages/Sports';
 import Settings from './pages/Settings';
 import Player from './pages/Player';
 import SessionBanner from './components/SessionBanner';
@@ -183,6 +184,7 @@ export default function App() {
     browse: <Browse />,
     sites: <Sites />,
     crew: <Crew />,
+    sports: <Sports />,
     settings: <Settings />,
     player: playerSession ? <Player session={playerSession} onClose={closePlayer} /> : null
   };

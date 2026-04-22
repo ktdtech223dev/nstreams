@@ -76,7 +76,9 @@ export const api = {
   malConnect: (userId) => req('POST', '/sync/mal/connect', { userId }),
   malSync: (userId) => req('POST', `/sync/mal/${userId}`),
   anilistConnect: (userId) => req('POST', '/sync/anilist/connect', { userId }),
-  anilistSync: (userId) => req('POST', `/sync/anilist/${userId}`)
+  anilistSync: (userId) => req('POST', `/sync/anilist/${userId}`),
+  getSports: () => req('GET', '/sports'),
+  clearSportsCache: () => req('POST', '/sports/clear-cache', {})
 };
 
 export default api;
