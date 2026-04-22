@@ -36,6 +36,7 @@ function publicParty(p) {
     host_id: p.host_id,
     content: p.content,
     site: p.site,
+    current_video: p.current_video || null,  // active URL the host is watching
     created_at: p.created_at,
     members: Object.values(p.members),
     state: p.state,
@@ -209,6 +210,31 @@ wss.on('connection', (ws) => {
           playing: msg.playing,
           ts: Date.now()
         }, ws);
+        break;
+      }
+
+      case 'load_video': {
+        // Host is switching to a different video — broadcast to all members.
+        if (!meta.party_id) return;
+        const p = parties.get(meta.party_id);
+        if (!p) return;
+        // Only the host can load videos for everyone.
+        if (meta.user.id !== p.host_id) return;
+        p.current_video = {
+          url: msg.url,
+          title: msg.title || '',
+          contentId: msg.contentId || null,
+          ts: Date.now()
+        };
+        // Reset playback state for fresh start.
+        p.state = { playing: false, current_time: 0, updated_at: Date.now(), updater_id: meta.user.id };
+        broadcast(p.id, {
+          type: 'load_video',
+          url: msg.url,
+          title: msg.title || '',
+          contentId: msg.contentId || null,
+          ts: Date.now()
+        }, ws); // ws = except: don't echo back to host
         break;
       }
 
