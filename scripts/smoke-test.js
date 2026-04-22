@@ -103,3 +103,7 @@ if (failures.length) {
 }
 
 console.log('\n✓ Smoke test passed — all modules load cleanly.\n');
+// Force exit — loading main.js kicks off async side effects (adblocker init,
+// server startup, etc.) that keep the event loop alive. We've verified all
+// modules load successfully; nothing else matters for the smoke test.
+process.exit(0);
