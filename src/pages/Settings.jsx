@@ -713,6 +713,7 @@ function _UnusedScraperSection() {
   );
 }
 
+
 function AdblockSection() {
   const { showToast } = useApp();
   const [status, setStatus] = useState(null);
