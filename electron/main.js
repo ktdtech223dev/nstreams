@@ -510,6 +510,9 @@ ipcMain.handle('player:open', async (_, opts) => {
 
   await playerView.webContents.loadURL(url);
 
+  // If we're in a watch party as host, tell all members to open this URL.
+  party.announceVideo(url, title, contentId);
+
   // Once loaded + video discovered, seek to resume position if we have one
   if (resumeAt && resumeAt > 5) {
     playerView.webContents.once('did-finish-load', () => {

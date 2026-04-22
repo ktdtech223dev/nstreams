@@ -68,6 +68,24 @@ export default function App() {
     });
   }, []);
 
+  // Watch party: host loaded a new video — open it for all members
+  const openPlayerRef = React.useRef(openPlayer);
+  useEffect(() => { openPlayerRef.current = openPlayer; });
+
+  useEffect(() => {
+    if (!window.electron?.party) return;
+    const off = window.electron.party.on('load_video', ({ url, title, contentId }) => {
+      openPlayerRef.current({
+        url,
+        title: title || 'Watch Party',
+        partyId: null,      // PartyContext already holds the partyId
+        contentId: contentId || null,
+      });
+      showToast(`▶ Now watching: ${title || 'new video'}`);
+    });
+    return () => off?.();
+  }, []);
+
   useEffect(() => {
     if (!window.electron) return;
     window.electron.onOAuthCallback(async (url) => {

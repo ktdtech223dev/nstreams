@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useParty } from './PartyContext';
 import { useApp } from '../App';
+import api from '../api';
 
 // Floating chat + controls sidebar shown whenever a party is active.
 // Lives in the main N Streams window. User keeps this + viewer window
@@ -10,9 +11,11 @@ const REACTIONS = ['🔥', '😂', '😱', '😭', '👀', '❤️', '💀', '�
 export default function PartySidebar() {
   const { party, members, messages, playback, reactions,
           sendChat, sendReaction, control, leaveParty } = useParty();
-  const { activeUser, showToast } = useApp();
+  const { activeUser, showToast, openPlayer } = useApp();
   const [text, setText] = useState('');
   const [minimized, setMinimized] = useState(false);
+  const [switchUrl, setSwitchUrl] = useState('');
+  const [showSwitch, setShowSwitch] = useState(false);
   const scrollRef = useRef(null);
 
   useEffect(() => {
@@ -134,7 +137,7 @@ export default function PartySidebar() {
         </div>
       </div>
 
-      {/* Host controls */}
+      {/* Controls */}
       <div className="p-3 border-b border-border bg-bg3/30">
         <div className="text-[10px] uppercase tracking-wider text-muted mb-2">
           {isHost ? 'Host Controls' : 'Sync'}
@@ -156,6 +159,56 @@ export default function PartySidebar() {
         <div className="text-[10px] text-muted mt-2">
           Current: {playback.playing ? 'Playing' : 'Paused'} at {formatTime(playback.current_time)}
         </div>
+
+        {/* Host: switch video for everyone */}
+        {isHost && (
+          <div className="mt-3">
+            {!showSwitch ? (
+              <button
+                onClick={() => setShowSwitch(true)}
+                className="w-full btn btn-ghost text-xs py-1.5 justify-center"
+              >
+                🎬 Switch Video for Everyone
+              </button>
+            ) : (
+              <div className="space-y-1.5">
+                <input
+                  value={switchUrl}
+                  onChange={e => setSwitchUrl(e.target.value)}
+                  placeholder="Paste a URL to play for everyone…"
+                  className="w-full bg-bg2 border border-border rounded-lg px-2 py-1.5 text-xs text-white placeholder-muted outline-none focus:border-accent"
+                />
+                <div className="flex gap-1.5">
+                  <button
+                    onClick={async () => {
+                      if (!switchUrl.trim()) return;
+                      // Open for host + push to members
+                      openPlayer({
+                        url: switchUrl.trim(),
+                        title: party.content?.title || 'Watch Party',
+                        partyId: party.id,
+                        contentId: party.content?.id || null,
+                      });
+                      setSwitchUrl('');
+                      setShowSwitch(false);
+                      showToast('🎬 Switching video for everyone…');
+                    }}
+                    disabled={!switchUrl.trim()}
+                    className="flex-1 btn btn-primary text-xs py-1 justify-center disabled:opacity-40"
+                  >
+                    ▶ Play for All
+                  </button>
+                  <button
+                    onClick={() => { setShowSwitch(false); setSwitchUrl(''); }}
+                    className="btn btn-ghost text-xs py-1 px-2"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Messages */}

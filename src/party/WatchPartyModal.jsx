@@ -81,25 +81,21 @@ export default function WatchPartyModal({ contentId, onClose }) {
     setBusy(true);
     try {
       const p = await joinParty({ user: activeUser, code: joinCode });
-      // Open viewer with the show if party has site info
-      if (p.site?.id || p.content) {
-        // Try to resolve URL — fall back to searching the service homepage
-        const ww = p.content?.id ? await api.whereToWatch(p.content.id).catch(() => null) : null;
-        let url = null;
-        if (ww && p.site) {
-          const match = ww.crew_links.find(l => l.site_id === p.site.id)
-                     || ww.tmdb_providers.find(t => t.provider_name === p.site.name);
-          url = match?.deep_link;
-        }
-        if (url) {
-          openPlayer({
-            url,
-            title: `${p.content?.title || 'Watch Party'} · joined`,
-            partyId: p.id,
-            contentId: p.content?.id
-          });
-        }
+
+      // If the host already has a video loaded, open it immediately.
+      // current_video is the live URL; fall back to whereToWatch lookup if absent.
+      if (p.current_video?.url) {
+        openPlayer({
+          url: p.current_video.url,
+          title: `${p.current_video.title || p.content?.title || 'Watch Party'} · Party`,
+          partyId: p.id,
+          contentId: p.current_video.contentId || p.content?.id || null,
+        });
+      } else if (p.content?.id) {
+        // Host hasn't opened the player yet — stand by, load_video will arrive
+        showToast(`Joined ${p.code} · waiting for host to start`);
       }
+
       showToast(`Joined ${p.code}`);
       onClose();
     } catch (e) {

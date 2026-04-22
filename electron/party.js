@@ -102,6 +102,14 @@ function connect(partyData, me) {
         toRenderer('party:reaction', msg);
         toViewer('party:reaction', msg);
         break;
+      case 'load_video':
+        // Host switched to a different video — open it on this client.
+        toRenderer('party:load_video', {
+          url: msg.url,
+          title: msg.title,
+          contentId: msg.contentId || null
+        });
+        break;
       case 'playback':
         // Someone else controlled playback — apply to our video.
         toViewer('party:apply', {
@@ -150,6 +158,16 @@ function send(msg) {
   if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg));
 }
 
+/**
+ * Broadcast the video the host just opened to all party members.
+ * Only works when we're in a party and we are the host.
+ */
+function announceVideo(url, title, contentId) {
+  if (!party || !user) return;
+  if (user.id !== String(party.host_id)) return;
+  send({ type: 'load_video', url, title: title || '', contentId: contentId || null });
+}
+
 // ─── IPC wiring ───────────────────────────────────────────────
 function registerIpc({ getRelayUrl, getViewerWindow, getMainWindow }) {
   ipcMain.handle('party:set-relay', (_, url) => {
@@ -196,6 +214,11 @@ function registerIpc({ getRelayUrl, getViewerWindow, getMainWindow }) {
     return { ok: true };
   });
 
+  ipcMain.handle('party:load-video', (_, { url, title, contentId }) => {
+    announceVideo(url, title, contentId);
+    return { ok: true };
+  });
+
   ipcMain.handle('party:register-viewer', (event) => {
     // Called from viewer-preload when it loads; allows main to find the viewer window
     const win = require('electron').BrowserWindow.fromWebContents(event.sender);
@@ -219,4 +242,4 @@ function registerIpc({ getRelayUrl, getViewerWindow, getMainWindow }) {
   });
 }
 
-module.exports = { registerIpc, setWindows, disconnect };
+module.exports = { registerIpc, setWindows, disconnect, announceVideo };

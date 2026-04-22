@@ -59,6 +59,8 @@ contextBridge.exposeInMainWorld('electron', {
     chat: (text) => ipcRenderer.invoke('party:chat', text),
     reaction: (emoji) => ipcRenderer.invoke('party:reaction', emoji),
     control: (action, current_time) => ipcRenderer.invoke('party:control', { action, current_time }),
+    // Host: push a specific URL to all party members
+    loadVideo: (opts) => ipcRenderer.invoke('party:load-video', opts),
     on: (event, cb) => {
       const channel = `party:${event}`;
       const handler = (_, payload) => cb(payload);
