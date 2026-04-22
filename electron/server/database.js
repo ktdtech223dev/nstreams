@@ -188,14 +188,34 @@ function seed() {
   const userCount = db.prepare('SELECT COUNT(*) as c FROM users').get().c;
 
   if (userCount === 0) {
+    // Fresh install — insert all crew members
     const insertUser = db.prepare(`
       INSERT INTO users (username, display_name, avatar_color)
       VALUES (?, ?, ?)
     `);
-    insertUser.run('keshawn', "Ke'Shawn", '#FF69B4');
+    insertUser.run('keshawn', "Ke'Shawn", '#4dd9ac');
     insertUser.run('sean', 'Sean', '#2E8B57');
     insertUser.run('amari', 'Amari', '#FFD700');
     insertUser.run('dart', 'Dart', '#722F37');
+    insertUser.run('arisa', 'Ari', '#FF69B4');
+    insertUser.run('tyheim', 'Tyheim', '#a855f7');
+  } else {
+    // Existing DB — apply crew changes idempotently
+    // 1. Update Keshawn's color from old pink to new mint-teal
+    db.prepare(`UPDATE users SET avatar_color = ? WHERE username = ? AND avatar_color = ?`)
+      .run('#4dd9ac', 'keshawn', '#FF69B4');
+    // 2. Add Arisa if not present
+    const hasArisa = db.prepare(`SELECT id FROM users WHERE username = 'arisa'`).get();
+    if (!hasArisa) {
+      db.prepare(`INSERT INTO users (username, display_name, avatar_color) VALUES (?, ?, ?)`)
+        .run('arisa', 'Ari', '#FF69B4');
+    }
+    // 3. Add Tyheim if not present
+    const hasTyheim = db.prepare(`SELECT id FROM users WHERE username = 'tyheim'`).get();
+    if (!hasTyheim) {
+      db.prepare(`INSERT INTO users (username, display_name, avatar_color) VALUES (?, ?, ?)`)
+        .run('tyheim', 'Tyheim', '#a855f7');
+    }
   }
 
   const siteCount = db.prepare('SELECT COUNT(*) as c FROM sites').get().c;

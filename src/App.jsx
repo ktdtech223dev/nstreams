@@ -9,6 +9,7 @@ import Settings from './pages/Settings';
 import Player from './pages/Player';
 import SessionBanner from './components/SessionBanner';
 import ContentModal from './components/ContentModal';
+import TutorialOverlay from './components/TutorialOverlay';
 import { PartyProvider } from './party/PartyContext';
 import PartySidebar from './party/PartySidebar';
 import WatchPartyModal from './party/WatchPartyModal';
@@ -214,6 +215,9 @@ export default function App() {
               {toast}
             </div>
           )}
+
+          {/* First-run tutorial for new crew members */}
+          <TutorialOverlay username={activeUser?.username} />
         </div>
       </PartyProvider>
     </AppContext.Provider>
