@@ -186,7 +186,7 @@ function injectEscapeButton() {
     s.id = 'nstreams-escape-css';
     s.textContent = `
       #nstreams-escape-btn {
-        position: fixed; top: 12px; right: 12px; z-index: 2147483646;
+        position: fixed; top: 12px; left: 12px; z-index: 2147483646;
         background: rgba(30,30,53,0.85); color: white;
         padding: 8px 14px; border-radius: 999px;
         font: 600 12px/1 system-ui, sans-serif; cursor: pointer;

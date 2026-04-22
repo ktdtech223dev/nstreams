@@ -46,6 +46,8 @@ let currentPartyViewer = null;   // The viewer window currently bound to a party
 // services will load and sign in, but hit an error on play.
 app.commandLine.appendSwitch('enable-features', 'PlatformHEVCDecoderSupport,HardwareMediaKeyHandling');
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+// Remove navigator.webdriver=true so Cloudflare/anti-bot doesn't detect us as automated.
+app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled');
 
 async function createWindow() {
   let apiPort;
