@@ -68,23 +68,11 @@ export default function App() {
     });
   }, []);
 
-  // Watch party: host loaded a new video — open it for all members
-  const openPlayerRef = React.useRef(openPlayer);
-  useEffect(() => { openPlayerRef.current = openPlayer; });
-
-  useEffect(() => {
-    if (!window.electron?.party) return;
-    const off = window.electron.party.on('load_video', ({ url, title, contentId }) => {
-      openPlayerRef.current({
-        url,
-        title: title || 'Watch Party',
-        partyId: null,      // PartyContext already holds the partyId
-        contentId: contentId || null,
-      });
-      showToast(`▶ Now watching: ${title || 'new video'}`);
-    });
-    return () => off?.();
-  }, []);
+  // Watch party: host loaded a new video — open it for all members.
+  // Ref is defined here (before openPlayer exists) but populated later so the
+  // listener can't capture a stale openPlayer closure. Initial value is null —
+  // the effect below swaps in the real function on every render.
+  const openPlayerRef = useRef(null);
 
   useEffect(() => {
     if (!window.electron) return;
@@ -158,6 +146,24 @@ export default function App() {
     setPlayerSession(null);
     setPage(prevPage || 'home');
   };
+
+  // Keep the ref fresh so the load_video listener below always calls the
+  // latest openPlayer (which closes over current page / prevPage state).
+  useEffect(() => { openPlayerRef.current = openPlayer; });
+
+  useEffect(() => {
+    if (!window.electron?.party) return;
+    const off = window.electron.party.on('load_video', ({ url, title, contentId }) => {
+      openPlayerRef.current?.({
+        url,
+        title: title || 'Watch Party',
+        partyId: null,      // PartyContext already holds the partyId
+        contentId: contentId || null,
+      });
+      showToast(`▶ Now watching: ${title || 'new video'}`);
+    });
+    return () => off?.();
+  }, []);
 
   const ctx = {
     users, activeUserId, activeUser, switchUser,
