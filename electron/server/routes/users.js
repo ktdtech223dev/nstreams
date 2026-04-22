@@ -41,11 +41,24 @@ router.get('/users/:id', (req, res) => {
     ORDER BY w.updated_at DESC LIMIT 3
   `).all(user.id);
 
+  // Read from watching_sessions — created on every startSession call regardless
+  // of whether the session was ended properly. Much more reliable than
+  // watchlist.updated_at which only changes when the user explicitly finishes.
+  // Read from watching_sessions — created on every startSession call regardless
+  // of whether the session was ended properly. Much more reliable than
+  // watchlist.updated_at which only changes when the user explicitly finishes.
   const thisWeek = db.prepare(`
-    SELECT w.*, c.title, c.poster_path
-    FROM watchlist w JOIN content c ON w.content_id = c.id
-    WHERE w.user_id = ? AND w.updated_at > datetime('now', '-7 days')
-    ORDER BY w.updated_at DESC LIMIT 3
+    SELECT ws.content_id,
+           ws.content_id AS id,
+           c.title, c.poster_path,
+           w.current_episode, w.current_season,
+           MAX(ws.started_at) as last_watched
+    FROM watching_sessions ws
+    JOIN content c ON ws.content_id = c.id
+    LEFT JOIN watchlist w ON w.user_id = ws.user_id AND w.content_id = ws.content_id
+    WHERE ws.user_id = ? AND ws.started_at > datetime('now', '-7 days')
+    GROUP BY ws.content_id
+    ORDER BY last_watched DESC LIMIT 5
   `).all(user.id);
 
   res.json({ ...user, stats: s, recentCompleted, thisWeek });

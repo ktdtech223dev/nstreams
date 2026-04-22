@@ -318,6 +318,19 @@ let positionSaveTimer = null;
 function destroyPlayerView(savePosition = true) {
   if (!playerView) return;
   if (savePosition) savePlayerPosition(true);
+
+  // End any open watching_session so history appears in crew profiles
+  // even if the user just closes the player without marking an episode done.
+  if (playerState.userId && playerState.contentId) {
+    try {
+      const db = require('./server/database').getDB();
+      db.prepare(`
+        UPDATE watching_sessions SET ended_at = CURRENT_TIMESTAMP
+        WHERE user_id = ? AND content_id = ? AND ended_at IS NULL
+      `).run(playerState.userId, playerState.contentId);
+    } catch (e) { console.warn('[player] session end error:', e.message); }
+  }
+
   try {
     if (playerState.partyId && party.setWindows) party.setWindows(mainWindow, null);
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.removeBrowserView(playerView);
