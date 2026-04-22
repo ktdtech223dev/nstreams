@@ -304,6 +304,8 @@ export default function Settings() {
 
       <AdblockSection />
 
+      <CdnProxySection />
+
       <LinkedAccountsSection />
 
       <Section title="Sync Status">
@@ -889,6 +891,71 @@ function LinkedAccountsSection() {
       <button onClick={clearAll} className="btn btn-ghost text-sm mt-4">
         Sign out of everything
       </button>
+    </Section>
+  );
+}
+
+function CdnProxySection() {
+  const { users, showToast } = useApp();
+  const [proxyUsers, setProxyUsers] = React.useState({});
+
+  React.useEffect(() => {
+    if (!window.electron?.viewerProxy) return;
+    (async () => {
+      const state = {};
+      for (const u of users) {
+        const r = await window.electron.viewerProxy.get(u.id);
+        state[u.id] = r?.enabled || false;
+      }
+      setProxyUsers(state);
+    })();
+  }, [users]);
+
+  async function toggle(userId, name) {
+    const next = !proxyUsers[userId];
+    await window.electron.viewerProxy.set(userId, next);
+    setProxyUsers(p => ({ ...p, [userId]: next }));
+    showToast(next ? `🌐 CDN proxy on for ${name}` : `CDN proxy off for ${name}`);
+  }
+
+  return (
+    <Section title="CDN Bypass">
+      <p className="text-muted text-sm mb-4">
+        Routes blocked video CDN requests through the crew relay — fixes geo-blocked sources
+        without needing a separate VPN. Requires a relay URL set in Watch Party settings.
+        Toggle per crew member.
+      </p>
+      <div className="space-y-2">
+        {users.map(u => (
+          <div key={u.id} className="flex items-center justify-between bg-bg3 px-4 py-3 rounded-lg">
+            <div className="flex items-center gap-3">
+              <div
+                className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white"
+                style={{ background: u.avatar_color }}
+              >
+                {u.display_name[0]}
+              </div>
+              <span className="text-white font-medium">{u.display_name}</span>
+            </div>
+            <button
+              onClick={() => toggle(u.id, u.display_name)}
+              className={`relative w-12 h-6 rounded-full transition-colors ${
+                proxyUsers[u.id] ? 'bg-accent' : 'bg-bg4'
+              }`}
+            >
+              <span
+                className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-transform ${
+                  proxyUsers[u.id] ? 'translate-x-7' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+        ))}
+      </div>
+      <p className="text-xs text-muted mt-3">
+        When on, video CDN traffic (cloudnestra, filemoon, streamtape, etc.) is routed through the relay.
+        All other browsing is unaffected.
+      </p>
     </Section>
   );
 }

@@ -253,4 +253,4 @@ function registerIpc({ getRelayUrl, getViewerWindow, getMainWindow }) {
   });
 }
 
-module.exports = { registerIpc, setWindows, disconnect, announceVideo };
+module.exports = { registerIpc, setWindows, disconnect, announceVideo, getRelayUrl: () => relayUrl };

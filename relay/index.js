@@ -102,6 +102,71 @@ app.delete('/parties/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+// ─── CDN Proxy ───────────────────────────────────────────────
+// Routes video CDN requests through the relay so crew members whose
+// ISP/CDN geo-blocks specific hosts can still watch.
+// Only whitelisted video-delivery domains are proxied.
+const PROXY_ALLOWED = new Set([
+  'cloudnestra.com', 'filemoon.sx', 'filemoon.to', 'filemoon.in',
+  'voe.sx', 'voe.bar', 'voe.monster',
+  'doodstream.com', 'dood.watch', 'dood.la', 'dood.wf',
+  'streamtape.com', 'streamtape.net', 'streamta.pe',
+  'upstream.to', 'rabbitstream.net', 'rapid-cloud.co',
+  'vidplay.online', 'vidplay.site', 'vidplay.lol',
+  'megacloud.tv', 'megacloud.ru',
+]);
+
+function proxyAllowed(hostname) {
+  const h = (hostname || '').toLowerCase();
+  for (const d of PROXY_ALLOWED) {
+    if (h === d || h.endsWith('.' + d)) return true;
+  }
+  return false;
+}
+
+app.get('/proxy', async (req, res) => {
+  const { url } = req.query;
+  if (!url) return res.status(400).json({ error: 'url required' });
+
+  let parsed;
+  try { parsed = new URL(url); } catch { return res.status(400).json({ error: 'invalid url' }); }
+  if (!proxyAllowed(parsed.hostname)) return res.status(403).json({ error: 'domain not proxied' });
+
+  try {
+    const headers = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+      'Referer': 'https://vidsrc.to/',
+      'Origin': 'https://vidsrc.to',
+    };
+    // Forward Range header so seeking works
+    if (req.headers['range']) headers['Range'] = req.headers['range'];
+
+    const upstream = await fetch(url, { headers, redirect: 'follow' });
+
+    res.status(upstream.status);
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Headers', 'Range');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Content-Length, Accept-Ranges');
+
+    for (const h of ['content-type', 'content-length', 'content-range', 'accept-ranges', 'cache-control']) {
+      const v = upstream.headers.get(h);
+      if (v) res.setHeader(h, v);
+    }
+
+    // Stream body — Node 20 has Readable.fromWeb built-in
+    const { Readable } = require('stream');
+    Readable.fromWeb(upstream.body).pipe(res);
+  } catch (e) {
+    if (!res.headersSent) res.status(502).json({ error: e.message });
+  }
+});
+
+app.options('/proxy', (_, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Headers', 'Range');
+  res.status(204).end();
+});
+
 // ─── WebSocket ───────────────────────────────────────────────
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws' });

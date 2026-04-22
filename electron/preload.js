@@ -53,6 +53,10 @@ contextBridge.exposeInMainWorld('electron', {
   onViewerEscaped: (cb) => ipcRenderer.on('viewer-escaped', (_, data) => cb(data)),
   adblockStatus: () => ipcRenderer.invoke('adblock-status'),
   adblockToggle: (on) => ipcRenderer.invoke('adblock-toggle', on),
+  viewerProxy: {
+    get: (userId) => ipcRenderer.invoke('viewer-proxy:get', userId),
+    set: (userId, enabled) => ipcRenderer.invoke('viewer-proxy:set', { userId, enabled }),
+  },
 
   // Watch Party
   party: {

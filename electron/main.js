@@ -315,6 +315,64 @@ let playerState = {
 };
 let positionSaveTimer = null;
 
+// ─── Per-user CDN proxy (routes blocked CDN requests through relay) ──────────
+// When enabled for a user, the viewer session's requests to known video CDN
+// domains are intercepted and redirected to our relay's /proxy endpoint,
+// which fetches them with the relay server's IP (bypassing IP/geo blocks).
+
+const CDN_PROXY_PATTERNS = [
+  '*://cloudnestra.com/*', '*://*.cloudnestra.com/*',
+  '*://filemoon.sx/*', '*://*.filemoon.sx/*',
+  '*://filemoon.to/*', '*://*.filemoon.to/*',
+  '*://voe.sx/*', '*://*.voe.sx/*',
+  '*://doodstream.com/*', '*://*.doodstream.com/*',
+  '*://streamtape.com/*', '*://*.streamtape.com/*',
+  '*://rabbitstream.net/*', '*://*.rabbitstream.net/*',
+  '*://rapid-cloud.co/*', '*://*.rapid-cloud.co/*',
+  '*://vidplay.online/*', '*://*.vidplay.online/*',
+  '*://megacloud.tv/*', '*://*.megacloud.tv/*',
+];
+
+function isViewerProxyEnabled(userId) {
+  const users = store.get('viewer_proxy_users', []);
+  return users.includes(String(userId));
+}
+
+function applyViewerProxy() {
+  const viewerSession = session.fromPartition('persist:nstreams-viewer');
+  const uid = playerState?.userId;
+  const relayBase = party.getRelayUrl?.();
+
+  if (!uid || !relayBase || !isViewerProxyEnabled(uid)) {
+    // Remove interceptor if proxy is off for this user
+    try { viewerSession.webRequest.onBeforeRequest({ urls: CDN_PROXY_PATTERNS }, null); } catch {}
+    return;
+  }
+
+  const relay = relayBase.replace(/\/$/, '');
+  viewerSession.webRequest.onBeforeRequest({ urls: CDN_PROXY_PATTERNS }, (details, callback) => {
+    // Double-check at call time (user might have toggled while player is open)
+    if (!isViewerProxyEnabled(playerState?.userId)) return callback({});
+    const proxyUrl = `${relay}/proxy?url=${encodeURIComponent(details.url)}`;
+    callback({ redirectURL: proxyUrl });
+  });
+  console.log('[proxy] CDN proxy active for userId', uid);
+}
+
+ipcMain.handle('viewer-proxy:get', (_, userId) => ({
+  enabled: isViewerProxyEnabled(userId)
+}));
+
+ipcMain.handle('viewer-proxy:set', (_, { userId, enabled }) => {
+  const users = store.get('viewer_proxy_users', []);
+  const updated = enabled
+    ? [...new Set([...users, String(userId)])]
+    : users.filter(id => id !== String(userId));
+  store.set('viewer_proxy_users', updated);
+  applyViewerProxy(); // re-apply for whoever is in the player right now
+  return { ok: true, enabled };
+});
+
 // Known video-delivery CDN domains. A 403 on any of these means the CDN
 // is geo-blocking or IP-blocking this machine — not a transient error.
 const VIDEO_CDN_DOMAINS = new Set([
@@ -568,7 +626,8 @@ ipcMain.handle('player:open', async (_, opts) => {
 
   await playerView.webContents.loadURL(url);
 
-  // Start watching for CDN 403 blocks (e.g. cloudnestra geo-blocked)
+  // Apply CDN proxy if enabled for this user, then watch for any remaining blocks
+  applyViewerProxy();
   watchForCdnBlocks();
 
   // If we're in a watch party as host, tell all members to open this URL.
