@@ -1,5 +1,6 @@
 const express = require('express');
 const { getDB } = require('../database');
+const { maybeFireDiscord } = require('../discord');
 
 const router = express.Router();
 
@@ -58,6 +59,9 @@ router.post('/sessions/start', (req, res) => {
       INSERT INTO activity_feed (user_id, content_id, activity_type, metadata)
       VALUES (?, ?, 'started_watching', ?)
     `).run(user_id, content_id, JSON.stringify({ site_id }));
+
+    // Discord: announce first-ever watch of this content
+    maybeFireDiscord(db, 'started_watching', user_id, content_id, {});
 
     res.json({
       session_id: info.lastInsertRowid,
@@ -118,12 +122,23 @@ router.post('/sessions/:id/end', (req, res) => {
         `).run(session.user_id, session.content_id,
                JSON.stringify({ episode: newEp, completed }));
 
+        // Discord: announce season finales
+        maybeFireDiscord(db, 'finished_episode', session.user_id, session.content_id, {
+          episode: newEp,
+          season:  w.current_season,
+        });
+
         if (completed) {
           db.prepare(`
             INSERT INTO activity_feed (user_id, content_id, activity_type, metadata)
             VALUES (?, ?, 'completed', ?)
           `).run(session.user_id, session.content_id,
                  JSON.stringify({ title: w.title }));
+
+          // Discord: announce series completion
+          maybeFireDiscord(db, 'completed', session.user_id, session.content_id, {
+            title: w.title,
+          });
         }
 
         return res.json({ ok: true, advanced: true, completed, current_episode: newEp });

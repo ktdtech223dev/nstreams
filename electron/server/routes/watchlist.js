@@ -1,5 +1,6 @@
 const express = require('express');
 const { getDB } = require('../database');
+const { maybeFireDiscord } = require('../discord');
 
 const router = express.Router();
 
@@ -108,6 +109,9 @@ router.put('/watchlist/:id', (req, res) => {
         INSERT INTO activity_feed (user_id, content_id, activity_type, metadata)
         VALUES (?, ?, 'rated', ?)
       `).run(w.user_id, w.content_id, JSON.stringify({ rating: fields.user_rating }));
+
+      // Discord: announce rating
+      maybeFireDiscord(db, 'rated', w.user_id, w.content_id, { rating: fields.user_rating });
     }
 
     res.json({ ok: true });
@@ -170,6 +174,9 @@ router.post('/watchlist/:id/advance', (req, res) => {
         INSERT INTO activity_feed (user_id, content_id, activity_type, metadata)
         VALUES (?, ?, 'completed', ?)
       `).run(w.user_id, w.content_id, JSON.stringify({ title: w.title }));
+
+      // Discord: announce series completion via manual advance
+      maybeFireDiscord(db, 'completed', w.user_id, w.content_id, { title: w.title });
     }
 
     res.json({ ok: true, current_episode: newEp, current_season: newSeason, watch_status: newStatus });
