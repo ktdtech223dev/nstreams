@@ -16,7 +16,15 @@ const trackedSessions = new Set();
 // login + playback flows (Amazon pulls auth from amazon-adsystem, Netflix
 // ships code via nflxso, etc.). Adblock breaks them — we auto-skip for
 // anything matching these hosts.
+// Hosts where the adblock is auto-disabled.
+// Two categories:
+//   1. Premium services — their auth/playback flows depend on domains that
+//      appear on ad/tracker lists (amazon-adsystem, nflxso, etc.)
+//   2. Scraper/embed CDNs — legitimate video-delivery domains that end up on
+//      EasyList because they share infrastructure with ad networks. Blocking
+//      them kills the video stream, not ads.
 const PREMIUM_HOSTS = [
+  // ── Premium streaming ────────────────────────────────────────────────────
   'amazon.com', 'primevideo.com', 'amazon-adsystem.com', 'a2z.com', 'ssl-images-amazon.com', 'media-amazon.com',
   'netflix.com', 'nflximg.net', 'nflxext.com', 'nflxvideo.net', 'nflxso.net',
   'hulu.com', 'hulustream.com', 'huluim.com',
@@ -29,7 +37,28 @@ const PREMIUM_HOSTS = [
   'youtube.com', 'youtu.be', 'googlevideo.com', 'ytimg.com', 'ggpht.com',
   'tubitv.com', 'adrise.tv',
   'pluto.tv',
-  'funimation.com', 'hidive.com'
+  'funimation.com', 'hidive.com',
+  // ── Scraper embed players & their video CDNs ────────────────────────────
+  // vidsrc family
+  'vidsrc.to', 'vidsrc.me', 'vidsrc.xyz', 'vidsrc.net', 'vidsrc.pm',
+  'cloudnestra.com',                          // vidsrc.to video CDN
+  // superembed / 2embed / embed.su
+  'superembed.stream', '2embed.cc', '2embed.org', '2embed.to',
+  'embed.su', 'autoembed.to', 'smashystream.com',
+  // vidplay / vidcloud cluster
+  'vidplay.online', 'vidplay.site', 'vidplay.lol',
+  'vidcloud.pro', 'vicloud.io',
+  // file hosts used for raw stream delivery
+  'filemoon.sx', 'filemoon.to', 'filemoon.in',
+  'voe.sx', 'voe.bar', 'voe.monster',
+  'doodstream.com', 'dood.watch', 'dood.la', 'dood.wf',
+  'streamtape.com', 'streamtape.net', 'streamta.pe',
+  'upstream.to',
+  // anime embed players
+  'rabbitstream.net', 'rapid-cloud.co',
+  'gogoanime.tel', 'gogo-stream.com',
+  // multipurpose embed
+  'moviesapi.club', 'multiembed.mov', 'uqload.io',
 ];
 
 function isPremiumUrl(url) {
