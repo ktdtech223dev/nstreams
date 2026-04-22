@@ -35,7 +35,12 @@ contextBridge.exposeInMainWorld('electron', {
     close: () => ipcRenderer.invoke('player:close'),
     reload: () => ipcRenderer.invoke('player:reload'),
     setBounds: (bounds) => ipcRenderer.invoke('player:set-bounds', bounds),
-    getState: () => ipcRenderer.invoke('player:get-state')
+    getState: () => ipcRenderer.invoke('player:get-state'),
+    onSourceBlocked: (cb) => {
+      const handler = (_, data) => cb(data);
+      ipcRenderer.on('player:source-blocked', handler);
+      return () => ipcRenderer.removeListener('player:source-blocked', handler);
+    }
   },
   onRedirectBlocked: (cb) => ipcRenderer.on('viewer-redirect-blocked', (_, data) => cb(data)),
   // Legacy pop-out window (fallback; not used by default anymore)

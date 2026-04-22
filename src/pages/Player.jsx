@@ -12,10 +12,12 @@ function fmtTime(s) {
 }
 
 export default function Player({ session, onClose }) {
-  const { activeUserId, showToast } = useApp();
+  const { activeUserId, showToast, openContent } = useApp();
   const slotRef = useRef(null);
   const [resume, setResume] = useState(null);
   const [opened, setOpened] = useState(false);
+  const [sourceBlocked, setSourceBlocked] = useState(false);
+  const stuckTimer = useRef(null);
 
   const loadAndOpen = useCallback(async (resumeAt = 0) => {
     if (!slotRef.current) return;
@@ -90,6 +92,27 @@ export default function Player({ session, onClose }) {
     return () => { window.electron.player.close(); };
   }, []);
 
+  // Instant detection: main process detected a 403 from a video CDN
+  useEffect(() => {
+    if (!window.electron?.player?.onSourceBlocked) return;
+    const off = window.electron.player.onSourceBlocked(() => setSourceBlocked(true));
+    return () => off?.();
+  }, []);
+
+  // Fallback: if video hasn't started playing after 20s, show the same overlay
+  useEffect(() => {
+    if (!opened) return;
+    setSourceBlocked(false);
+    clearTimeout(stuckTimer.current);
+    stuckTimer.current = setTimeout(async () => {
+      try {
+        const state = await window.electron?.player?.getState?.();
+        if (!state?.position || state.position < 1) setSourceBlocked(true);
+      } catch {}
+    }, 20000);
+    return () => clearTimeout(stuckTimer.current);
+  }, [opened, session.url]);
+
   function exit() {
     window.electron.player.close();
     onClose();
@@ -145,6 +168,42 @@ export default function Player({ session, onClose }) {
         {!opened && !resume && (
           <div className="absolute inset-0 flex items-center justify-center text-muted">
             Loading…
+          </div>
+        )}
+
+        {/* Source blocked / stuck overlay */}
+        {sourceBlocked && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/90 z-20">
+            <div className="surface-elevated rounded-2xl p-10 max-w-md text-center shadow-2xl border border-red/20">
+              <div className="text-4xl mb-4">🚫</div>
+              <div className="font-display text-xl text-white mb-2">Source blocked</div>
+              <div className="text-muted text-sm mb-8 leading-relaxed">
+                This video source is refusing your connection — likely a CDN geo-block or IP ban.
+                Try a different source or open in your browser where a VPN might be active.
+              </div>
+              <div className="flex flex-col gap-3">
+                {session.contentId && (
+                  <button
+                    onClick={() => { onClose(); openContent(session.contentId); }}
+                    className="btn btn-primary justify-center"
+                  >
+                    🔄 Try another source
+                  </button>
+                )}
+                <button
+                  onClick={openExternal}
+                  className="btn btn-ghost justify-center"
+                >
+                  <ExternalLink size={14} /> Open in browser
+                </button>
+                <button
+                  onClick={() => setSourceBlocked(false)}
+                  className="text-xs text-muted hover:text-white transition"
+                >
+                  Keep waiting
+                </button>
+              </div>
+            </div>
           </div>
         )}
         {resume && !opened && (

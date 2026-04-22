@@ -315,6 +315,49 @@ let playerState = {
 };
 let positionSaveTimer = null;
 
+// Known video-delivery CDN domains. A 403 on any of these means the CDN
+// is geo-blocking or IP-blocking this machine — not a transient error.
+const VIDEO_CDN_DOMAINS = new Set([
+  'cloudnestra.com', 'filemoon.sx', 'filemoon.to', 'filemoon.in',
+  'voe.sx', 'voe.bar', 'voe.monster',
+  'doodstream.com', 'dood.watch', 'dood.la', 'dood.wf',
+  'streamtape.com', 'streamtape.net', 'streamta.pe',
+  'upstream.to', 'rabbitstream.net', 'rapid-cloud.co',
+  'vidplay.online', 'vidplay.site', 'vidplay.lol',
+  'megacloud.tv', 'megacloud.ru',
+]);
+
+function isVideoCdn(hostname) {
+  const h = (hostname || '').toLowerCase();
+  for (const d of VIDEO_CDN_DOMAINS) {
+    if (h === d || h.endsWith('.' + d)) return true;
+  }
+  return false;
+}
+
+function watchForCdnBlocks() {
+  try {
+    const viewerSession = session.fromPartition('persist:nstreams-viewer');
+    viewerSession.webRequest.onCompleted((details) => {
+      if (!playerView) return;
+      if (details.statusCode !== 403 && details.statusCode !== 451) return;
+      if (details.resourceType === 'mainFrame') return; // ignore top-level page 403s
+      try {
+        const host = new URL(details.url).hostname;
+        if (isVideoCdn(host)) {
+          toRenderer('player:source-blocked', { host, statusCode: details.statusCode });
+        }
+      } catch {}
+    });
+  } catch (e) { console.warn('[player] webRequest watch failed:', e.message); }
+}
+
+function clearCdnBlockWatch() {
+  try {
+    session.fromPartition('persist:nstreams-viewer').webRequest.onCompleted(null);
+  } catch {}
+}
+
 function destroyPlayerView(savePosition = true) {
   if (!playerView) return;
   if (savePosition) savePlayerPosition(true);
@@ -330,6 +373,8 @@ function destroyPlayerView(savePosition = true) {
       `).run(playerState.userId, playerState.contentId);
     } catch (e) { console.warn('[player] session end error:', e.message); }
   }
+
+  clearCdnBlockWatch();
 
   try {
     if (playerState.partyId && party.setWindows) party.setWindows(mainWindow, null);
@@ -522,6 +567,9 @@ ipcMain.handle('player:open', async (_, opts) => {
   positionSaveTimer = setInterval(() => savePlayerPosition(), 10000);
 
   await playerView.webContents.loadURL(url);
+
+  // Start watching for CDN 403 blocks (e.g. cloudnestra geo-blocked)
+  watchForCdnBlocks();
 
   // If we're in a watch party as host, tell all members to open this URL.
   party.announceVideo(url, title, contentId);
