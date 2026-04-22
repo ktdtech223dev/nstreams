@@ -14,19 +14,30 @@ let viewerWin = null;       // BrowserWindow currently showing the party video
 let mainWin = null;         // main N Streams window (for UI events)
 let pingInterval = null;
 
+// viewerWin may be a BrowserWindow (legacy popout) OR a BrowserView (the
+// embedded player). BrowserView has no isDestroyed() of its own — only its
+// webContents does. Normalize by always going through webContents.
+function aliveContents(winOrView) {
+  const wc = winOrView && winOrView.webContents;
+  if (!wc) return null;
+  if (typeof wc.isDestroyed === 'function' && wc.isDestroyed()) return null;
+  return wc;
+}
+
 function setWindows(main, viewer) {
   mainWin = main;
   viewerWin = viewer;
-  if (viewer && !viewer.isDestroyed()) {
-    viewer.webContents.send('party:active', !!party);
-  }
+  const wc = aliveContents(viewer);
+  if (wc) wc.send('party:active', !!party);
 }
 
 function toRenderer(channel, payload) {
-  if (mainWin && !mainWin.isDestroyed()) mainWin.webContents.send(channel, payload);
+  const wc = aliveContents(mainWin);
+  if (wc) wc.send(channel, payload);
 }
 function toViewer(channel, payload) {
-  if (viewerWin && !viewerWin.isDestroyed()) viewerWin.webContents.send(channel, payload);
+  const wc = aliveContents(viewerWin);
+  if (wc) wc.send(channel, payload);
 }
 
 function wsUrl(base) {
