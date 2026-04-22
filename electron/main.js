@@ -320,18 +320,11 @@ let positionSaveTimer = null;
 // domains are intercepted and redirected to our relay's /proxy endpoint,
 // which fetches them with the relay server's IP (bypassing IP/geo blocks).
 
-const CDN_PROXY_PATTERNS = [
-  '*://cloudnestra.com/*', '*://*.cloudnestra.com/*',
-  '*://filemoon.sx/*', '*://*.filemoon.sx/*',
-  '*://filemoon.to/*', '*://*.filemoon.to/*',
-  '*://voe.sx/*', '*://*.voe.sx/*',
-  '*://doodstream.com/*', '*://*.doodstream.com/*',
-  '*://streamtape.com/*', '*://*.streamtape.com/*',
-  '*://rabbitstream.net/*', '*://*.rabbitstream.net/*',
-  '*://rapid-cloud.co/*', '*://*.rapid-cloud.co/*',
-  '*://vidplay.online/*', '*://*.vidplay.online/*',
-  '*://megacloud.tv/*', '*://*.megacloud.tv/*',
-];
+// When proxy is enabled for a user, ALL sub-resource requests from the viewer
+// session are routed through the relay — no domain list to maintain.
+// mainFrame (the embed page itself) loads normally so relative URLs resolve
+// correctly; everything the page then requests goes through the relay.
+const CDN_PROXY_PATTERNS = ['<all_urls>'];
 
 function isViewerProxyEnabled(userId) {
   const users = store.get('viewer_proxy_users', []);
@@ -344,15 +337,35 @@ function applyViewerProxy() {
   const relayBase = party.getRelayUrl?.();
 
   if (!uid || !relayBase || !isViewerProxyEnabled(uid)) {
-    // Remove interceptor if proxy is off for this user
+    // Remove interceptors if proxy is off for this user
     try { viewerSession.webRequest.onBeforeRequest({ urls: CDN_PROXY_PATTERNS }, null); } catch {}
+    try { viewerSession.webRequest.onBeforeSendHeaders(null); } catch {}
     return;
   }
 
   const relay = relayBase.replace(/\/$/, '');
+  const PROXY_TOKEN = 'nstreams-crew-proxy-2026';
+
+  // We can't send custom headers with redirectURL, so we use onBeforeSendHeaders
+  // to inject the auth token into requests that land on our relay /proxy endpoint.
+  viewerSession.webRequest.onBeforeSendHeaders(
+    { urls: [`${relay}/proxy*`] },
+    (details, callback) => {
+      const headers = { ...details.requestHeaders, 'x-nstreams-proxy': PROXY_TOKEN };
+      callback({ requestHeaders: headers });
+    }
+  );
+
   viewerSession.webRequest.onBeforeRequest({ urls: CDN_PROXY_PATTERNS }, (details, callback) => {
-    // Double-check at call time (user might have toggled while player is open)
+    // Double-check at call time (toggle may have changed while player is open)
     if (!isViewerProxyEnabled(playerState?.userId)) return callback({});
+    // Let the main embed page load directly — it's the CDN sub-requests we care about.
+    // Proxying the main frame breaks relative URL resolution inside the page.
+    if (details.resourceType === 'mainFrame') return callback({});
+    // Skip non-HTTP(S) (WebSockets, data:, blob:, etc.) — redirect doesn't apply
+    if (!details.url.startsWith('http')) return callback({});
+    // Skip requests already going to our relay (avoid infinite loop)
+    if (details.url.startsWith(relay)) return callback({});
     const proxyUrl = `${relay}/proxy?url=${encodeURIComponent(details.url)}`;
     callback({ redirectURL: proxyUrl });
   });
