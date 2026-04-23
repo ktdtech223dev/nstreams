@@ -965,91 +965,71 @@ function CdnProxySection() {
 
 function VpnProxySection() {
   const { users, showToast } = useApp();
-  const [urls, setUrls] = React.useState({});
-  const [saved, setSaved] = React.useState({});
+  const [vpnUsers, setVpnUsers] = React.useState({});
 
   React.useEffect(() => {
-    if (!window.electron?.proxy) return;
+    if (!window.electron?.vpn) return;
     (async () => {
       const state = {};
       for (const u of users) {
-        const r = await window.electron.proxy.get(u.id);
-        state[u.id] = r?.url || '';
+        const r = await window.electron.vpn.get(u.id);
+        state[u.id] = r?.enabled || false;
       }
-      setUrls(state);
-      setSaved({ ...state });
+      setVpnUsers(state);
     })();
   }, [users]);
 
-  async function save(userId, name) {
-    const url = (urls[userId] || '').trim();
-    await window.electron.proxy.set(userId, url);
-    setSaved(s => ({ ...s, [userId]: url }));
-    showToast(url ? `🔒 Proxy active for ${name}` : `Proxy cleared for ${name}`);
+  async function toggle(userId, name) {
+    const next = !vpnUsers[userId];
+    await window.electron.vpn.set(userId, next);
+    setVpnUsers(s => ({ ...s, [userId]: next }));
+    showToast(next ? `🔒 VPN on for ${name}` : `VPN off for ${name}`);
   }
 
   return (
-    <Section title="VPN / Proxy">
+    <Section title="Built-in VPN">
       <p className="text-muted text-sm mb-4">
-        Routes <strong>all</strong> app traffic through a proxy for a specific crew member —
-        fixes geo-blocks that the CDN bypass can't reach. Enter a SOCKS5 or HTTP proxy URL.
-        Leave blank to use a direct connection.
+        Routes <strong>all</strong> app traffic through the crew's server when enabled —
+        metadata, search, the embedded player, everything. Fixes geo-blocks that the
+        CDN bypass can't reach. Switches automatically when you switch crew member.
       </p>
-      <div className="space-y-3">
-        {users.map(u => {
-          const url   = urls[u.id] || '';
-          const isSet = !!saved[u.id];
-          const dirty = url !== (saved[u.id] || '');
-          return (
-            <div key={u.id} className="bg-bg3 rounded-lg px-4 py-3">
-              <div className="flex items-center gap-3 mb-2">
-                <div
-                  className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
-                  style={{ background: u.avatar_color }}
-                >
-                  {u.display_name[0]}
-                </div>
-                <span className="text-white font-medium text-sm">{u.display_name}</span>
-                {isSet && (
-                  <span className="ml-auto flex items-center gap-1 text-xs text-green">
-                    <span className="w-1.5 h-1.5 bg-green rounded-full" />
-                    Active
-                  </span>
-                )}
+      <div className="space-y-2">
+        {users.map(u => (
+          <div key={u.id} className="flex items-center justify-between bg-bg3 px-4 py-3 rounded-lg">
+            <div className="flex items-center gap-3">
+              <div
+                className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white"
+                style={{ background: u.avatar_color }}
+              >
+                {u.display_name[0]}
               </div>
-              <div className="flex gap-2">
-                <input
-                  value={url}
-                  onChange={e => setUrls(s => ({ ...s, [u.id]: e.target.value }))}
-                  placeholder="socks5://host:port  or  http://host:port"
-                  className="input flex-1 text-xs font-mono"
-                />
-                <button
-                  onClick={() => save(u.id, u.display_name)}
-                  disabled={!dirty}
-                  className="btn btn-primary text-xs disabled:opacity-40"
-                >
-                  {!dirty && saved[u.id] ? '✓' : 'Save'}
-                </button>
-                {saved[u.id] && (
-                  <button
-                    onClick={() => {
-                      setUrls(s => ({ ...s, [u.id]: '' }));
-                      save(u.id, u.display_name);
-                    }}
-                    className="btn btn-ghost text-xs"
-                  >
-                    Clear
-                  </button>
+              <div>
+                <span className="text-white font-medium">{u.display_name}</span>
+                {vpnUsers[u.id] && (
+                  <div className="flex items-center gap-1 text-xs text-green mt-0.5">
+                    <span className="w-1.5 h-1.5 bg-green rounded-full" />
+                    Tunnelling through crew server
+                  </div>
                 )}
               </div>
             </div>
-          );
-        })}
+            <button
+              onClick={() => toggle(u.id, u.display_name)}
+              className={`relative w-12 h-6 rounded-full transition-colors ${
+                vpnUsers[u.id] ? 'bg-accent' : 'bg-bg4'
+              }`}
+            >
+              <span
+                className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-transform ${
+                  vpnUsers[u.id] ? 'translate-x-7' : 'translate-x-1'
+                }`}
+              />
+            </button>
+          </div>
+        ))}
       </div>
       <p className="text-xs text-muted mt-3">
-        Proxy switches automatically when you switch crew member. Applies to the entire app
-        including metadata, search, and the embedded player.
+        Uses the N Games server as an exit node. No external VPN needed.
       </p>
     </Section>
   );

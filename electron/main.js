@@ -377,33 +377,49 @@ function applyViewerProxy() {
   console.log('[proxy] CDN proxy active for userId', uid);
 }
 
-// ─── Per-user system-wide proxy ───────────────────────────────────────────────
-// Routes ALL Electron network traffic (main window + viewer) through a
-// user-configured SOCKS5 or HTTP proxy. Applied automatically whenever
-// the active user changes. Sean's proxy URL is stored independently of
-// anyone else's — only his sessions get routed when he's logged in.
+// ─── Built-in VPN (per-user) ───────────────────────────────────────────────────
+// When enabled for a user, ALL Electron sessions route through a local
+// SOCKS5 proxy that tunnels TCP via WebSocket to the crew's Launcher server.
+// The server makes the actual outbound connections — traffic appears to come
+// from the server's IP, bypassing any geo or IP block on Sean's machine.
+
+const vpnProxy = require('./vpn-proxy');
 
 const ALL_SESSIONS = () => [
   session.defaultSession,
   session.fromPartition('persist:nstreams-viewer'),
 ];
 
-async function applySystemProxy(userId) {
-  const proxyUrl = userId ? store.get(`user_proxy_url_${userId}`, '') : '';
-  const config   = proxyUrl ? { proxyRules: proxyUrl } : { mode: 'system' };
-  for (const s of ALL_SESSIONS()) {
-    try { await s.setProxy(config); } catch {}
-  }
-  if (proxyUrl) console.log(`[proxy] system proxy → ${proxyUrl} (user ${userId})`);
+function isVpnEnabled(userId) {
+  return store.get(`user_vpn_${userId}`, false);
 }
 
-ipcMain.handle('proxy:get', (_, userId) => ({
-  url: store.get(`user_proxy_url_${userId}`, ''),
+async function applySystemProxy(userId) {
+  if (!userId) return;
+  if (isVpnEnabled(userId)) {
+    try {
+      const port   = await vpnProxy.start();
+      const config = { proxyRules: `socks5://127.0.0.1:${port}` };
+      for (const s of ALL_SESSIONS()) {
+        try { await s.setProxy(config); } catch {}
+      }
+      console.log(`[vpn] active for user ${userId} → socks5://127.0.0.1:${port}`);
+    } catch (e) {
+      console.error('[vpn] failed to start:', e.message);
+    }
+  } else {
+    for (const s of ALL_SESSIONS()) {
+      try { await s.setProxy({ mode: 'system' }); } catch {}
+    }
+  }
+}
+
+ipcMain.handle('vpn:get', (_, userId) => ({
+  enabled: isVpnEnabled(userId),
 }));
 
-ipcMain.handle('proxy:set', async (_, { userId, url }) => {
-  if (url && url.trim()) store.set(`user_proxy_url_${userId}`, url.trim());
-  else                   store.delete(`user_proxy_url_${userId}`);
+ipcMain.handle('vpn:set', async (_, { userId, enabled }) => {
+  store.set(`user_vpn_${userId}`, !!enabled);
   if (String(userId) === String(store.get('active_user_id', 1))) {
     await applySystemProxy(userId);
   }
