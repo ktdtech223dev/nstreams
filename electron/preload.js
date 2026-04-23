@@ -57,6 +57,10 @@ contextBridge.exposeInMainWorld('electron', {
     get: (userId) => ipcRenderer.invoke('viewer-proxy:get', userId),
     set: (userId, enabled) => ipcRenderer.invoke('viewer-proxy:set', { userId, enabled }),
   },
+  proxy: {
+    get: (userId) => ipcRenderer.invoke('proxy:get', userId),
+    set: (userId, url) => ipcRenderer.invoke('proxy:set', { userId, url }),
+  },
 
   // Watch Party
   party: {

@@ -127,7 +127,10 @@ ipcMain.handle('close', () => mainWindow?.close());
 ipcMain.handle('get-store', (_, key) => store.get(key));
 ipcMain.handle('set-store', (_, key, val) => store.set(key, val));
 ipcMain.handle('get-active-user', () => store.get('active_user_id', 1));
-ipcMain.handle('set-active-user', (_, id) => store.set('active_user_id', id));
+ipcMain.handle('set-active-user', async (_, id) => {
+  store.set('active_user_id', id);
+  await applySystemProxy(id); // switch proxy to match whoever just logged in
+});
 
 // ───────── In-app streaming viewer ─────────
 // Opens the given URL inside a persistent Electron window.
@@ -373,6 +376,39 @@ function applyViewerProxy() {
   });
   console.log('[proxy] CDN proxy active for userId', uid);
 }
+
+// ─── Per-user system-wide proxy ───────────────────────────────────────────────
+// Routes ALL Electron network traffic (main window + viewer) through a
+// user-configured SOCKS5 or HTTP proxy. Applied automatically whenever
+// the active user changes. Sean's proxy URL is stored independently of
+// anyone else's — only his sessions get routed when he's logged in.
+
+const ALL_SESSIONS = () => [
+  session.defaultSession,
+  session.fromPartition('persist:nstreams-viewer'),
+];
+
+async function applySystemProxy(userId) {
+  const proxyUrl = userId ? store.get(`user_proxy_url_${userId}`, '') : '';
+  const config   = proxyUrl ? { proxyRules: proxyUrl } : { mode: 'system' };
+  for (const s of ALL_SESSIONS()) {
+    try { await s.setProxy(config); } catch {}
+  }
+  if (proxyUrl) console.log(`[proxy] system proxy → ${proxyUrl} (user ${userId})`);
+}
+
+ipcMain.handle('proxy:get', (_, userId) => ({
+  url: store.get(`user_proxy_url_${userId}`, ''),
+}));
+
+ipcMain.handle('proxy:set', async (_, { userId, url }) => {
+  if (url && url.trim()) store.set(`user_proxy_url_${userId}`, url.trim());
+  else                   store.delete(`user_proxy_url_${userId}`);
+  if (String(userId) === String(store.get('active_user_id', 1))) {
+    await applySystemProxy(userId);
+  }
+  return { ok: true };
+});
 
 ipcMain.handle('viewer-proxy:get', (_, userId) => ({
   enabled: isViewerProxyEnabled(userId)
@@ -891,6 +927,9 @@ party.registerIpc({
 });
 
 app.whenReady().then(async () => {
+  // Apply system proxy for whichever user was last active
+  await applySystemProxy(store.get('active_user_id', 1));
+
   // Initialize ad/tracker blocker — applied only to the viewer partition
   // (the main window doesn't need it, it serves our own UI). Per-window
   // URL is inspected at watchInApp time to auto-disable for premium

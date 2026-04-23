@@ -306,6 +306,8 @@ export default function Settings() {
 
       <CdnProxySection />
 
+      <VpnProxySection />
+
       <LinkedAccountsSection />
 
       <Section title="Sync Status">
@@ -956,6 +958,98 @@ function CdnProxySection() {
       <p className="text-xs text-muted mt-3">
         When on, video CDN traffic (cloudnestra, filemoon, streamtape, etc.) is routed through the relay.
         All other browsing is unaffected.
+      </p>
+    </Section>
+  );
+}
+
+function VpnProxySection() {
+  const { users, showToast } = useApp();
+  const [urls, setUrls] = React.useState({});
+  const [saved, setSaved] = React.useState({});
+
+  React.useEffect(() => {
+    if (!window.electron?.proxy) return;
+    (async () => {
+      const state = {};
+      for (const u of users) {
+        const r = await window.electron.proxy.get(u.id);
+        state[u.id] = r?.url || '';
+      }
+      setUrls(state);
+      setSaved({ ...state });
+    })();
+  }, [users]);
+
+  async function save(userId, name) {
+    const url = (urls[userId] || '').trim();
+    await window.electron.proxy.set(userId, url);
+    setSaved(s => ({ ...s, [userId]: url }));
+    showToast(url ? `🔒 Proxy active for ${name}` : `Proxy cleared for ${name}`);
+  }
+
+  return (
+    <Section title="VPN / Proxy">
+      <p className="text-muted text-sm mb-4">
+        Routes <strong>all</strong> app traffic through a proxy for a specific crew member —
+        fixes geo-blocks that the CDN bypass can't reach. Enter a SOCKS5 or HTTP proxy URL.
+        Leave blank to use a direct connection.
+      </p>
+      <div className="space-y-3">
+        {users.map(u => {
+          const url   = urls[u.id] || '';
+          const isSet = !!saved[u.id];
+          const dirty = url !== (saved[u.id] || '');
+          return (
+            <div key={u.id} className="bg-bg3 rounded-lg px-4 py-3">
+              <div className="flex items-center gap-3 mb-2">
+                <div
+                  className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
+                  style={{ background: u.avatar_color }}
+                >
+                  {u.display_name[0]}
+                </div>
+                <span className="text-white font-medium text-sm">{u.display_name}</span>
+                {isSet && (
+                  <span className="ml-auto flex items-center gap-1 text-xs text-green">
+                    <span className="w-1.5 h-1.5 bg-green rounded-full" />
+                    Active
+                  </span>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  value={url}
+                  onChange={e => setUrls(s => ({ ...s, [u.id]: e.target.value }))}
+                  placeholder="socks5://host:port  or  http://host:port"
+                  className="input flex-1 text-xs font-mono"
+                />
+                <button
+                  onClick={() => save(u.id, u.display_name)}
+                  disabled={!dirty}
+                  className="btn btn-primary text-xs disabled:opacity-40"
+                >
+                  {!dirty && saved[u.id] ? '✓' : 'Save'}
+                </button>
+                {saved[u.id] && (
+                  <button
+                    onClick={() => {
+                      setUrls(s => ({ ...s, [u.id]: '' }));
+                      save(u.id, u.display_name);
+                    }}
+                    className="btn btn-ghost text-xs"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <p className="text-xs text-muted mt-3">
+        Proxy switches automatically when you switch crew member. Applies to the entire app
+        including metadata, search, and the embedded player.
       </p>
     </Section>
   );
