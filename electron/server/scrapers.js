@@ -386,10 +386,16 @@ async function resolveAvailability(contentId, { userId, season, episode } = {}) 
     results.push(...flix, ...sflix);
   }
 
-  // Grouped Embed Players card — always offered for movies + TV with a TMDB ID
-  if (!isAnime && content.tmdb_id) {
+  // Grouped Embed Players card — always offered for movies + TV with a TMDB ID.
+  // Also included for anime as a fallback: VidSrc/Embed.su support anime via
+  // TMDB IDs and use completely different CDNs than the anime-specific providers,
+  // so they work even when megacloud/rabbitstream is blocked for a user.
+  if (content.tmdb_id) {
     const embed = embedAggregatorResult(content, s, e);
-    if (embed) results.unshift(embed);
+    if (embed) {
+      if (isAnime) results.push(embed); // after anime-specific sources
+      else         results.unshift(embed); // before scraped results for movies/TV
+    }
   }
 
   // Filter blacklist
