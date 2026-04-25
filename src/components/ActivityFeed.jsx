@@ -28,7 +28,11 @@ export default function ActivityFeed({ compact, limit }) {
   const [items, setItems] = useState([]);
 
   useEffect(() => {
-    api.activityCrew().then(setItems).catch(() => {});
+    let cancelled = false;
+    const load = () => api.activityCrew().then(d => { if (!cancelled) setItems(d); }).catch(() => {});
+    load();
+    const timer = setInterval(load, 30_000);
+    return () => { cancelled = true; clearInterval(timer); };
   }, []);
 
   const list = limit ? items.slice(0, limit) : items;

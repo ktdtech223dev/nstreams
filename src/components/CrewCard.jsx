@@ -8,8 +8,13 @@ export default function CrewCard({ user }) {
   const [sync, setSync] = useState(null);
 
   useEffect(() => {
-    api.getUser(user.id).then(setDetail).catch(() => {});
-    api.syncStatus(user.id).then(setSync).catch(() => {});
+    const load = () => {
+      api.getUser(user.id).then(setDetail).catch(() => {});
+      api.syncStatus(user.id).then(setSync).catch(() => {});
+    };
+    load();
+    const timer = setInterval(load, 30_000);
+    return () => clearInterval(timer);
   }, [user.id]);
 
   const isActive = user.id === activeUserId;

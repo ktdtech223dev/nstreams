@@ -31,6 +31,13 @@ export default function ContentModal({ contentId, onClose }) {
   const [linkOpen, setLinkOpen] = useState(false);
 
   useEffect(() => {
+    setTab('overview');
+    setWhere(null);
+    setScraped(null);
+    setLinkOpen(false);
+  }, [activeUserId]);
+
+  useEffect(() => {
     (async () => {
       setLoading(true);
       try {
@@ -42,7 +49,7 @@ export default function ContentModal({ contentId, onClose }) {
         setLoading(false);
       }
     })();
-  }, [contentId]);
+  }, [contentId, activeUserId]);
 
   const [scraped, setScraped] = useState(null); // {results, loading, error}
 

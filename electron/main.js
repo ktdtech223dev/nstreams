@@ -127,9 +127,8 @@ ipcMain.handle('close', () => mainWindow?.close());
 ipcMain.handle('get-store', (_, key) => store.get(key));
 ipcMain.handle('set-store', (_, key, val) => store.set(key, val));
 ipcMain.handle('get-active-user', () => store.get('active_user_id', 1));
-ipcMain.handle('set-active-user', async (_, id) => {
+ipcMain.handle('set-active-user', (_, id) => {
   store.set('active_user_id', id);
-  await applySystemProxy(id); // switch proxy to match whoever just logged in
 });
 
 // ───────── In-app streaming viewer ─────────
@@ -320,125 +319,6 @@ let playerState = {
 };
 let positionSaveTimer = null;
 
-// ─── Per-user CDN proxy (routes blocked CDN requests through relay) ──────────
-// When enabled for a user, the viewer session's requests to known video CDN
-// domains are intercepted and redirected to our relay's /proxy endpoint,
-// which fetches them with the relay server's IP (bypassing IP/geo blocks).
-
-// When proxy is enabled for a user, ALL sub-resource requests from the viewer
-// session are routed through the relay — no domain list to maintain.
-// mainFrame (the embed page itself) loads normally so relative URLs resolve
-// correctly; everything the page then requests goes through the relay.
-const CDN_PROXY_PATTERNS = ['<all_urls>'];
-
-function isViewerProxyEnabled(userId) {
-  const users = store.get('viewer_proxy_users', []);
-  return users.includes(String(userId));
-}
-
-function applyViewerProxy() {
-  const viewerSession = session.fromPartition('persist:nstreams-viewer');
-  const uid = playerState?.userId;
-  const relayBase = party.getRelayUrl?.();
-
-  if (!uid || !relayBase || !isViewerProxyEnabled(uid)) {
-    // Remove interceptors if proxy is off for this user
-    try { viewerSession.webRequest.onBeforeRequest({ urls: CDN_PROXY_PATTERNS }, null); } catch {}
-    try { viewerSession.webRequest.onBeforeSendHeaders(null); } catch {}
-    return;
-  }
-
-  const relay = relayBase.replace(/\/$/, '');
-  const PROXY_TOKEN = 'nstreams-crew-proxy-2026';
-
-  // We can't send custom headers with redirectURL, so we use onBeforeSendHeaders
-  // to inject the auth token into requests that land on our relay /proxy endpoint.
-  viewerSession.webRequest.onBeforeSendHeaders(
-    { urls: [`${relay}/proxy*`] },
-    (details, callback) => {
-      const headers = { ...details.requestHeaders, 'x-nstreams-proxy': PROXY_TOKEN };
-      callback({ requestHeaders: headers });
-    }
-  );
-
-  viewerSession.webRequest.onBeforeRequest({ urls: CDN_PROXY_PATTERNS }, (details, callback) => {
-    // Double-check at call time (toggle may have changed while player is open)
-    if (!isViewerProxyEnabled(playerState?.userId)) return callback({});
-    // Let the main embed page load directly — it's the CDN sub-requests we care about.
-    // Proxying the main frame breaks relative URL resolution inside the page.
-    if (details.resourceType === 'mainFrame') return callback({});
-    // Skip non-HTTP(S) (WebSockets, data:, blob:, etc.) — redirect doesn't apply
-    if (!details.url.startsWith('http')) return callback({});
-    // Skip requests already going to our relay (avoid infinite loop)
-    if (details.url.startsWith(relay)) return callback({});
-    const proxyUrl = `${relay}/proxy?url=${encodeURIComponent(details.url)}`;
-    callback({ redirectURL: proxyUrl });
-  });
-  console.log('[proxy] CDN proxy active for userId', uid);
-}
-
-// ─── Built-in VPN (per-user) ───────────────────────────────────────────────────
-// When enabled for a user, ALL Electron sessions route through a local
-// SOCKS5 proxy that tunnels TCP via WebSocket to the crew's Launcher server.
-// The server makes the actual outbound connections — traffic appears to come
-// from the server's IP, bypassing any geo or IP block on Sean's machine.
-
-const vpnProxy = require('./vpn-proxy');
-
-const ALL_SESSIONS = () => [
-  session.defaultSession,
-  session.fromPartition('persist:nstreams-viewer'),
-];
-
-function isVpnEnabled(userId) {
-  return store.get(`user_vpn_${userId}`, false);
-}
-
-async function applySystemProxy(userId) {
-  if (!userId) return;
-  if (isVpnEnabled(userId)) {
-    try {
-      const port   = await vpnProxy.start();
-      const config = { proxyRules: `socks5://127.0.0.1:${port}` };
-      for (const s of ALL_SESSIONS()) {
-        try { await s.setProxy(config); } catch {}
-      }
-      console.log(`[vpn] active for user ${userId} → socks5://127.0.0.1:${port}`);
-    } catch (e) {
-      console.error('[vpn] failed to start:', e.message);
-    }
-  } else {
-    for (const s of ALL_SESSIONS()) {
-      try { await s.setProxy({ mode: 'system' }); } catch {}
-    }
-  }
-}
-
-ipcMain.handle('vpn:get', (_, userId) => ({
-  enabled: isVpnEnabled(userId),
-}));
-
-ipcMain.handle('vpn:set', async (_, { userId, enabled }) => {
-  store.set(`user_vpn_${userId}`, !!enabled);
-  if (String(userId) === String(store.get('active_user_id', 1))) {
-    await applySystemProxy(userId);
-  }
-  return { ok: true };
-});
-
-ipcMain.handle('viewer-proxy:get', (_, userId) => ({
-  enabled: isViewerProxyEnabled(userId)
-}));
-
-ipcMain.handle('viewer-proxy:set', (_, { userId, enabled }) => {
-  const users = store.get('viewer_proxy_users', []);
-  const updated = enabled
-    ? [...new Set([...users, String(userId)])]
-    : users.filter(id => id !== String(userId));
-  store.set('viewer_proxy_users', updated);
-  applyViewerProxy(); // re-apply for whoever is in the player right now
-  return { ok: true, enabled };
-});
 
 // Known video-delivery CDN domains. A 403 on any of these means the CDN
 // is geo-blocking or IP-blocking this machine — not a transient error.
@@ -693,8 +573,6 @@ ipcMain.handle('player:open', async (_, opts) => {
 
   await playerView.webContents.loadURL(url);
 
-  // Apply CDN proxy if enabled for this user, then watch for any remaining blocks
-  applyViewerProxy();
   watchForCdnBlocks();
 
   // If we're in a watch party as host, tell all members to open this URL.
@@ -943,9 +821,6 @@ party.registerIpc({
 });
 
 app.whenReady().then(async () => {
-  // Apply system proxy for whichever user was last active
-  await applySystemProxy(store.get('active_user_id', 1));
-
   // Initialize ad/tracker blocker — applied only to the viewer partition
   // (the main window doesn't need it, it serves our own UI). Per-window
   // URL is inspected at watchInApp time to auto-disable for premium

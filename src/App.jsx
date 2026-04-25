@@ -6,6 +6,7 @@ import Browse from './pages/Browse';
 import Sites from './pages/Sites';
 import Crew from './pages/Crew';
 import Sports from './pages/Sports';
+import Cable from './pages/Cable';
 import Settings from './pages/Settings';
 import Player from './pages/Player';
 import SessionBanner from './components/SessionBanner';
@@ -182,6 +183,7 @@ export default function App() {
     home: <Home />,
     watchlist: <Watchlist />,
     browse: <Browse />,
+    cable: <Cable />,
     sites: <Sites />,
     crew: <Crew />,
     sports: <Sports />,
@@ -190,6 +192,7 @@ export default function App() {
   };
 
   const chromeLess = page === 'player' || page === 'home';
+  const fullHeight = page === 'player' || page === 'cable';
 
   return (
     <AppContext.Provider value={ctx}>
@@ -197,14 +200,14 @@ export default function App() {
         <div className="flex flex-col h-screen w-screen bg-bg">
           <TopNav page={page} setPage={setPage} searchRef={searchRef} />
           <div className="flex flex-1 overflow-hidden">
-            <main className={`flex-1 relative ${page === 'player' ? 'overflow-hidden' : 'overflow-y-auto'}`}>
+            <main className={`flex-1 relative ${fullHeight ? 'overflow-hidden' : 'overflow-y-auto'}`}>
               {activeSessions.length > 0 && page !== 'player' && (
                 <SessionBanner
                   session={activeSessions[0]}
                   onAction={refreshSessions}
                 />
               )}
-              {page === 'player' ? (
+              {fullHeight ? (
                 <div className="h-full animate-fade" key={page}>
                   {pages[page]}
                 </div>

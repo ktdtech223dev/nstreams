@@ -304,9 +304,8 @@ export default function Settings() {
 
       <AdblockSection />
 
-      <CdnProxySection />
+      <CableTvSection />
 
-      <VpnProxySection />
 
       <LinkedAccountsSection />
 
@@ -898,139 +897,44 @@ function LinkedAccountsSection() {
   );
 }
 
-function CdnProxySection() {
-  const { users, showToast } = useApp();
-  const [proxyUsers, setProxyUsers] = React.useState({});
+function CableTvSection() {
+  const [city, setCity] = React.useState('');
+  const [saved, setSaved] = React.useState(false);
 
   React.useEffect(() => {
-    if (!window.electron?.viewerProxy) return;
-    (async () => {
-      const state = {};
-      for (const u of users) {
-        const r = await window.electron.viewerProxy.get(u.id);
-        state[u.id] = r?.enabled || false;
-      }
-      setProxyUsers(state);
-    })();
-  }, [users]);
+    window.electron?.getStore('cable_location')
+      .then(v => { if (v) setCity(v); })
+      .catch(() => {});
+  }, []);
 
-  async function toggle(userId, name) {
-    const next = !proxyUsers[userId];
-    await window.electron.viewerProxy.set(userId, next);
-    setProxyUsers(p => ({ ...p, [userId]: next }));
-    showToast(next ? `🌐 CDN proxy on for ${name}` : `CDN proxy off for ${name}`);
+  function save() {
+    window.electron?.setStore('cable_location', city.trim());
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
   }
 
   return (
-    <Section title="CDN Bypass">
+    <Section title="Cable TV">
       <p className="text-muted text-sm mb-4">
-        Routes blocked video CDN requests through the crew relay — fixes geo-blocked sources
-        without needing a separate VPN. Requires a relay URL set in Watch Party settings.
-        Toggle per crew member.
+        Set your city to show local news stations in the Cable tab.
+        Use a major city name — e.g. <span className="text-white">Austin</span>, <span className="text-white">Houston</span>, <span className="text-white">Dallas</span>.
       </p>
-      <div className="space-y-2">
-        {users.map(u => (
-          <div key={u.id} className="flex items-center justify-between bg-bg3 px-4 py-3 rounded-lg">
-            <div className="flex items-center gap-3">
-              <div
-                className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white"
-                style={{ background: u.avatar_color }}
-              >
-                {u.display_name[0]}
-              </div>
-              <span className="text-white font-medium">{u.display_name}</span>
-            </div>
-            <button
-              onClick={() => toggle(u.id, u.display_name)}
-              className={`relative w-12 h-6 rounded-full transition-colors ${
-                proxyUsers[u.id] ? 'bg-accent' : 'bg-bg4'
-              }`}
-            >
-              <span
-                className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-transform ${
-                  proxyUsers[u.id] ? 'translate-x-7' : 'translate-x-1'
-                }`}
-              />
-            </button>
-          </div>
-        ))}
+      <div className="flex gap-3 items-center">
+        <input
+          type="text"
+          value={city}
+          onChange={e => { setCity(e.target.value); setSaved(false); }}
+          onKeyDown={e => e.key === 'Enter' && save()}
+          placeholder="Your city (e.g. Austin)"
+          className="bg-bg3 border border-border text-white rounded-lg px-4 py-2 text-sm flex-1 max-w-xs outline-none focus:ring-2 focus:ring-accent"
+        />
+        <button
+          onClick={save}
+          className="btn btn-primary text-sm"
+        >
+          {saved ? '✓ Saved' : 'Save'}
+        </button>
       </div>
-      <p className="text-xs text-muted mt-3">
-        When on, video CDN traffic (cloudnestra, filemoon, streamtape, etc.) is routed through the relay.
-        All other browsing is unaffected.
-      </p>
-    </Section>
-  );
-}
-
-function VpnProxySection() {
-  const { users, showToast } = useApp();
-  const [vpnUsers, setVpnUsers] = React.useState({});
-
-  React.useEffect(() => {
-    if (!window.electron?.vpn) return;
-    (async () => {
-      const state = {};
-      for (const u of users) {
-        const r = await window.electron.vpn.get(u.id);
-        state[u.id] = r?.enabled || false;
-      }
-      setVpnUsers(state);
-    })();
-  }, [users]);
-
-  async function toggle(userId, name) {
-    const next = !vpnUsers[userId];
-    await window.electron.vpn.set(userId, next);
-    setVpnUsers(s => ({ ...s, [userId]: next }));
-    showToast(next ? `🔒 VPN on for ${name}` : `VPN off for ${name}`);
-  }
-
-  return (
-    <Section title="Built-in VPN">
-      <p className="text-muted text-sm mb-4">
-        Routes <strong>all</strong> app traffic through the crew's server when enabled —
-        metadata, search, the embedded player, everything. Fixes geo-blocks that the
-        CDN bypass can't reach. Switches automatically when you switch crew member.
-      </p>
-      <div className="space-y-2">
-        {users.map(u => (
-          <div key={u.id} className="flex items-center justify-between bg-bg3 px-4 py-3 rounded-lg">
-            <div className="flex items-center gap-3">
-              <div
-                className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold text-white"
-                style={{ background: u.avatar_color }}
-              >
-                {u.display_name[0]}
-              </div>
-              <div>
-                <span className="text-white font-medium">{u.display_name}</span>
-                {vpnUsers[u.id] && (
-                  <div className="flex items-center gap-1 text-xs text-green mt-0.5">
-                    <span className="w-1.5 h-1.5 bg-green rounded-full" />
-                    Tunnelling through crew server
-                  </div>
-                )}
-              </div>
-            </div>
-            <button
-              onClick={() => toggle(u.id, u.display_name)}
-              className={`relative w-12 h-6 rounded-full transition-colors ${
-                vpnUsers[u.id] ? 'bg-accent' : 'bg-bg4'
-              }`}
-            >
-              <span
-                className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-transform ${
-                  vpnUsers[u.id] ? 'translate-x-7' : 'translate-x-1'
-                }`}
-              />
-            </button>
-          </div>
-        ))}
-      </div>
-      <p className="text-xs text-muted mt-3">
-        Uses the N Games server as an exit node. No external VPN needed.
-      </p>
     </Section>
   );
 }
