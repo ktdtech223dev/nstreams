@@ -1,11 +1,11 @@
 [build]
 builder = "nixpacks"
-# Only install production deps — skip the Vite frontend build entirely.
-# The server (server.js) is pure Node.js and doesn't need a build step.
-buildCommand = "npm install --omit=dev --ignore-scripts && npm rebuild better-sqlite3"
+# Install only production deps (Capacitor is in devDependencies so it's skipped).
+# DO NOT use --ignore-scripts — better-sqlite3 needs its postinstall to compile.
+buildCommand = "npm install --omit=dev"
 
 [deploy]
 startCommand = "node server.js"
 healthcheckPath = "/api/health"
-healthcheckTimeout = 30
+healthcheckTimeout = 60
 restartPolicyType = "on_failure"
