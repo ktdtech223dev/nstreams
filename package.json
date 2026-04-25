@@ -10,11 +10,20 @@
     "build": "vite build",
     "start": "electron .",
     "smoke": "node scripts/smoke-test.js",
-    "dist": "npm run smoke && vite build && electron-builder"
+    "dist": "npm run smoke && vite build && electron-builder",
+    "build:android": "cross-env VITE_PLATFORM=android vite build && npx cap sync android",
+    "open:android": "npx cap open android",
+    "server": "node server.js"
   },
   "author": "N Games Crew",
   "license": "MIT",
   "dependencies": {
+    "@capacitor/android": "^8.3.1",
+    "@capacitor/app": "^8.1.0",
+    "@capacitor/browser": "^8.0.3",
+    "@capacitor/cli": "^8.3.1",
+    "@capacitor/core": "^8.3.1",
+    "@capacitor/preferences": "^8.0.1",
     "@ghostery/adblocker-electron": "^2.14.1",
     "axios": "^1.6.0",
     "better-sqlite3": "^11.0.0",

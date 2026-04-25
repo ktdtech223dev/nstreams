@@ -1,6 +1,4 @@
 const axios = require('axios');
-const Store = require('electron-store');
-const store = new Store();
 
 const BASE = 'https://api.themoviedb.org/3';
 const IMG = 'https://image.tmdb.org/t/p/';
@@ -9,14 +7,28 @@ const IMG = 'https://image.tmdb.org/t/p/';
 // everyone. Users can override in Settings if they want their own.
 const DEFAULT_TMDB_KEY = '9d2e9a6233558c9cd22fe3a745435bf1';
 
+// Store reference is optional — only available when running inside Electron
+let _store = null;
+function getStore() {
+  if (_store) return _store;
+  try {
+    const Store = require('electron-store');
+    _store = new Store();
+  } catch { /* running outside Electron */ }
+  return _store;
+}
+
 function getKey() {
-  const saved = store.get('tmdb_api_key');
+  // Railway: honour env var override
+  if (process.env.TMDB_API_KEY) return process.env.TMDB_API_KEY;
+  const saved = getStore()?.get('tmdb_api_key');
   if (saved && String(saved).trim()) return String(saved).trim();
   return DEFAULT_TMDB_KEY;
 }
 
 function isUsingDefaultKey() {
-  const saved = store.get('tmdb_api_key');
+  if (process.env.TMDB_API_KEY) return false;
+  const saved = getStore()?.get('tmdb_api_key');
   return !(saved && String(saved).trim());
 }
 

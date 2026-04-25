@@ -1,11 +1,20 @@
 const Database = require('better-sqlite3');
 const path = require('path');
-const { app } = require('electron');
 
-const DB_PATH = path.join(
-  app.getPath('userData'),
-  'nstreams.db'
-);
+// Railway / standalone: set DATABASE_PATH env var (e.g. /data/nstreams.db)
+// Electron: falls back to userData directory automatically
+let DB_PATH;
+if (process.env.DATABASE_PATH) {
+  DB_PATH = process.env.DATABASE_PATH;
+} else {
+  try {
+    const { app } = require('electron');
+    DB_PATH = path.join(app.getPath('userData'), 'nstreams.db');
+  } catch {
+    // Running outside Electron without DATABASE_PATH — use cwd as fallback
+    DB_PATH = path.join(process.cwd(), 'nstreams.db');
+  }
+}
 
 let db;
 

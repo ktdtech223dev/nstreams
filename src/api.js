@@ -1,9 +1,17 @@
-// Port is injected by Electron main process via ?apiPort= query string,
-// falls back to the default for dev mode.
-export const API_PORT = (typeof window !== 'undefined' && window.electron?.apiPort)
-  || parseInt(new URLSearchParams(window.location.search).get('apiPort'))
-  || 57832;
-const BASE = `http://localhost:${API_PORT}/api`;
+// Android/Capacitor builds: VITE_API_URL is set at build time to the
+// Railway backend URL (e.g. https://nstreams-api.up.railway.app/api).
+// Electron builds: port is injected via ?apiPort= query param or defaults.
+const _viteApiUrl = import.meta.env?.VITE_API_URL;
+
+export const API_PORT = _viteApiUrl
+  ? null  // not applicable for remote API
+  : (typeof window !== 'undefined' && window.electron?.apiPort)
+      || parseInt(new URLSearchParams(window.location.search).get('apiPort'))
+      || 57832;
+
+const BASE = _viteApiUrl
+  ? _viteApiUrl.replace(/\/$/, '')          // Railway URL (no trailing slash)
+  : `http://localhost:${API_PORT}/api`;
 
 async function req(method, path, body) {
   const res = await fetch(`${BASE}${path}`, {

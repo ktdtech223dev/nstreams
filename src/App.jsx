@@ -77,6 +77,25 @@ export default function App() {
   const openPlayerRef = useRef(null);
 
   useEffect(() => {
+    // Android deep-link handler for OAuth (nstreams:// scheme)
+    if (window.Capacitor) {
+      import('@capacitor/app').then(({ App: CapApp }) => {
+        CapApp.addListener('appUrlOpen', async ({ url }) => {
+          try {
+            if (url.includes('mal-callback')) {
+              const u = new URL(url.replace('nstreams://', 'https://x/'));
+              const code = u.searchParams.get('code');
+              if (code) { await api.malCallback({ code, userId: activeUserId }); showToast('MAL connected ✓'); }
+            } else if (url.includes('anilist-callback')) {
+              const frag = url.split('#')[1] || '';
+              const token = new URLSearchParams(frag).get('access_token');
+              if (token) { await api.anilistCallback({ token, userId: activeUserId }); showToast('AniList connected ✓'); }
+            }
+          } catch (e) { showToast('OAuth failed: ' + e.message); }
+        });
+      });
+      return;
+    }
     if (!window.electron) return;
     window.electron.onOAuthCallback(async (url) => {
       try {
@@ -138,6 +157,14 @@ export default function App() {
   }
 
   const openPlayer = (sessionObj) => {
+    // Android / Capacitor — open in the system browser instead of BrowserView
+    if (window.Capacitor) {
+      import('@capacitor/browser').then(({ Browser }) => {
+        Browser.open({ url: sessionObj.url });
+      });
+      return;
+    }
+    // Electron — existing BrowserView player
     setPlayerSession(sessionObj);
     setPrevPage(page === 'player' ? prevPage : page);
     setPage('player');
