@@ -3,6 +3,8 @@ const path = require('path');
 
 // Railway / standalone: set DATABASE_PATH env var (e.g. /data/nstreams.db)
 // Electron: falls back to userData directory automatically
+const fs = require('fs');
+
 let DB_PATH;
 if (process.env.DATABASE_PATH) {
   DB_PATH = process.env.DATABASE_PATH;
@@ -15,6 +17,14 @@ if (process.env.DATABASE_PATH) {
     DB_PATH = path.join(process.cwd(), 'nstreams.db');
   }
 }
+
+// Ensure the directory exists (Railway volumes must be created via dashboard,
+// but the mount point dir is guaranteed to exist once a volume is attached).
+// For the default cwd fallback there's nothing to create.
+try {
+  const dir = path.dirname(DB_PATH);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+} catch { /* best-effort */ }
 
 let db;
 
