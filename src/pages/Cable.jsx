@@ -132,8 +132,11 @@ export default function Cable() {
   }
 
   function watchCh(ch, prg) {
+    // Use the server-side HLS proxy player when we have an HLS URL —
+    // all Pluto TV requests go through Express which adds proper headers.
+    const label = ch.name + (prg ? ' — ' + prg.title : '');
     const url = ch.hlsUrl
-      ? `http://localhost:${API_PORT}/api/cable/player?src=${encodeURIComponent(ch.hlsUrl)}&title=${encodeURIComponent(ch.name + (prg ? ' — ' + prg.title : ''))}`
+      ? `http://localhost:${API_PORT}/api/cable/player/${ch.id}?title=${encodeURIComponent(label)}`
       : `https://pluto.tv/live-tv/${ch.slug}`;
     openPlayer({
       url,

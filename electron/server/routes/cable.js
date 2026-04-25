@@ -132,14 +132,95 @@ router.get('/cable/local-news', (req, res) => {
   res.json({ city: match || city, stations });
 });
 
-// ─── GET /api/cable/player?src=<hlsUrl>&title=<title> ────────────────────────
-// Returns a self-contained HTML page that plays an HLS stream using hls.js.
-// Opened in the N Streams BrowserView player so it inherits the app's UA.
-router.get('/cable/player', (req, res) => {
-  const src   = req.query.src   || '';
-  const title = String(req.query.title || 'Live TV').replace(/[<>"]/g, '');
+// ─── HLS Server-Side Proxy ────────────────────────────────────────────────────
+// Pluto TV streams reject direct browser XHR (CORS + Referer checks).
+// We proxy every HLS request through Express so it goes out with Pluto headers.
+//
+//   /api/cable/stream/:channelId   →  fetches master manifest, rewrites URLs
+//   /api/cable/hls-proxy?url=      →  fetches any subsequent manifest/segment
 
-  if (!src) return res.status(400).send('<h1>Missing ?src= parameter</h1>');
+function rewriteM3U8(text, targetUrl, proxyBase) {
+  const base = new URL(targetUrl);
+  // Rewrite bare URL lines (non-# lines) and URI="..." attributes
+  return text
+    .replace(/^(?!#)(\S.*)$/gm, (line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return line;
+      try {
+        const abs = new URL(trimmed, base).toString();
+        return proxyBase + encodeURIComponent(abs);
+      } catch { return line; }
+    })
+    .replace(/URI="([^"]+)"/g, (_, uri) => {
+      try {
+        const abs = new URL(uri, base).toString();
+        return `URI="${proxyBase}${encodeURIComponent(abs)}"`;
+      } catch { return _; }
+    });
+}
+
+async function proxyHlsUrl(targetUrl, req, res) {
+  try {
+    const response = await axios.get(targetUrl, {
+      headers: PLUTO_HEADERS,
+      responseType: 'stream',
+      timeout: 15000,
+      maxRedirects: 5,
+    });
+
+    const ct = (response.headers['content-type'] || '').toLowerCase();
+    const isManifest = ct.includes('mpegurl') || ct.includes('x-mpegurl') ||
+      /\.(m3u8|m3u)(\?|$)/.test(targetUrl);
+
+    res.setHeader('Access-Control-Allow-Origin', '*');
+
+    if (isManifest) {
+      // Buffer manifest to rewrite internal URLs
+      const proxyBase = `${req.protocol}://${req.get('host')}/api/cable/hls-proxy?url=`;
+      let raw = '';
+      response.data.on('data', c => { raw += c.toString(); });
+      response.data.on('end', () => {
+        const rewritten = rewriteM3U8(raw, targetUrl, proxyBase);
+        res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+        res.send(rewritten);
+      });
+      response.data.on('error', () => {
+        if (!res.headersSent) res.status(502).send('Stream read error');
+      });
+    } else {
+      // Pass segments straight through
+      res.setHeader('Content-Type', ct || 'video/MP2T');
+      response.data.pipe(res);
+    }
+  } catch (e) {
+    if (!res.headersSent) res.status(502).send('Proxy error: ' + e.message);
+  }
+}
+
+// Entry point: /api/cable/stream/:channelId
+router.get('/cable/stream/:channelId', async (req, res) => {
+  const ch = channelCache?.find(c => c.id === req.params.channelId);
+  if (!ch?.hlsUrl) return res.status(404).json({ error: 'Channel not found or no HLS URL' });
+  await proxyHlsUrl(ch.hlsUrl, req, res);
+});
+
+// Generic segment/manifest proxy: /api/cable/hls-proxy?url=<encoded>
+router.get('/cable/hls-proxy', async (req, res) => {
+  const url = req.query.url;
+  if (!url) return res.status(400).send('Missing ?url=');
+  await proxyHlsUrl(url, req, res);
+});
+
+// ─── GET /api/cable/player/:channelId ────────────────────────────────────────
+// Self-contained hls.js player page. The <video> src points to the server-side
+// HLS proxy so all Pluto segment requests go through Express (proper headers).
+router.get('/cable/player/:channelId', (req, res) => {
+  const ch = channelCache?.find(c => c.id === req.params.channelId);
+  if (!ch) return res.status(404).send('<h1>Channel not found</h1>');
+
+  const title     = String(req.query.title || ch.name).replace(/[<>"]/g, '');
+  const streamSrc = `/api/cable/stream/${ch.id}`;  // relative — same host:port
+  const plutoFallback = `https://pluto.tv/live-tv/${ch.slug}`;
 
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.send(`<!DOCTYPE html>
@@ -150,65 +231,59 @@ router.get('/cable/player', (req, res) => {
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
     html, body { width:100%; height:100%; background:#000; overflow:hidden; }
-    video { width:100%; height:100%; display:block; background:#000; }
+    video { width:100%; height:100%; display:block; }
     #err {
-      display:none; position:fixed; inset:0; background:#000;
-      color:#aaa; font-family:monospace; font-size:13px;
-      align-items:center; justify-content:center; flex-direction:column; gap:12px;
+      display:none; position:fixed; inset:0; background:#000; color:#bbb;
+      font-family:monospace; font-size:13px; flex-direction:column;
+      align-items:center; justify-content:center; gap:14px; text-align:center;
+      padding:24px;
     }
     #err.show { display:flex; }
-    #err a { color:#ffd700; }
+    #err a { color:#ffd700; text-decoration:none; }
+    #err a:hover { text-decoration:underline; }
   </style>
 </head>
 <body>
   <video id="v" controls autoplay playsinline></video>
   <div id="err">
     <div id="msg">Loading…</div>
-    <a id="fallback" href="#" style="display:none">Open on Pluto.tv ↗</a>
+    <a href="${plutoFallback}" target="_blank">Open on Pluto.tv ↗</a>
   </div>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js"></script>
   <script>
     var video = document.getElementById('v');
     var err   = document.getElementById('err');
     var msg   = document.getElementById('msg');
-    var src   = ${JSON.stringify(src)};
 
-    function showErr(text, fallbackUrl) {
+    function showErr(text) {
       msg.textContent = text;
       err.classList.add('show');
-      if (fallbackUrl) {
-        var a = document.getElementById('fallback');
-        a.href = fallbackUrl;
-        a.style.display = '';
-        a.onclick = function(e) { e.preventDefault(); window.open(fallbackUrl); };
-      }
     }
 
-    if (!src) {
-      showErr('No stream URL provided.');
-    } else if (typeof Hls === 'undefined') {
-      showErr('hls.js could not load — check internet connection.');
+    if (typeof Hls === 'undefined') {
+      showErr('hls.js failed to load — check your internet connection.');
     } else if (Hls.isSupported()) {
-      var hls = new Hls({ enableWorker: false, xhrSetup: function(xhr) {
-        xhr.setRequestHeader('Referer', 'https://pluto.tv/');
-      }});
-      hls.loadSource(src);
+      var hls = new Hls({ enableWorker: false, maxBufferLength: 30 });
+      hls.loadSource(${JSON.stringify(streamSrc)});
       hls.attachMedia(video);
       hls.on(Hls.Events.MANIFEST_PARSED, function() { video.play().catch(function(){}); });
-      hls.on(Hls.Events.ERROR, function(_, data) {
+      hls.on(Hls.Events.ERROR, function(e, data) {
         if (data.fatal) {
           if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-            showErr('Network error loading stream. The channel may be geo-restricted.');
+            hls.startLoad(); // attempt auto-recovery once
+            setTimeout(function() {
+              if (video.readyState === 0) showErr('Stream unavailable — try opening on Pluto.tv below.');
+            }, 5000);
           } else {
-            showErr('Stream error: ' + (data.details || 'unknown'));
+            showErr('Playback error: ' + (data.details || 'unknown'));
           }
         }
       });
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      video.src = src;
+      video.src = ${JSON.stringify(streamSrc)};
       video.play().catch(function(){});
     } else {
-      showErr('HLS playback is not supported.');
+      showErr('HLS is not supported in this browser.');
     }
   </script>
 </body>
