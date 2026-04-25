@@ -1,5 +1,8 @@
 [build]
 builder = "nixpacks"
+# Only install production deps — skip the Vite frontend build entirely.
+# The server (server.js) is pure Node.js and doesn't need a build step.
+buildCommand = "npm install --omit=dev --ignore-scripts && npm rebuild better-sqlite3"
 
 [deploy]
 startCommand = "node server.js"
