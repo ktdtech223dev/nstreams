@@ -1,0 +1,15 @@
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "node index.js"
+restartPolicyType = "always"
+# Worker service — no public domain or healthcheck needed
+
+# ── Persistent storage (recommended) ──────────────────────────────────────────
+# Add a volume at /data in the Railway dashboard (Service → Volumes → + Add Volume)
+# Mount path: /data
+#
+# This keeps seen-tags.json and state.json alive across restarts so the bot
+# doesn't re-announce old game releases or lose the pinned crew-status message.
+# Without a volume, those files reset on each deploy (not critical but noisy).

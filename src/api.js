@@ -1,6 +1,6 @@
 // Port is injected by Electron main process via ?apiPort= query string,
 // falls back to the default for dev mode.
-const API_PORT = (typeof window !== 'undefined' && window.electron?.apiPort)
+export const API_PORT = (typeof window !== 'undefined' && window.electron?.apiPort)
   || parseInt(new URLSearchParams(window.location.search).get('apiPort'))
   || 57832;
 const BASE = `http://localhost:${API_PORT}/api`;

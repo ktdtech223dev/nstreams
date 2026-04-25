@@ -106,25 +106,31 @@ app.delete('/parties/:id', (req, res) => {
 // Routes video CDN requests through the relay so crew members whose
 // ISP/CDN geo-blocks specific hosts can still watch.
 // Only whitelisted video-delivery domains are proxied.
-const PROXY_ALLOWED = new Set([
-  'cloudnestra.com', 'filemoon.sx', 'filemoon.to', 'filemoon.in',
-  'voe.sx', 'voe.bar', 'voe.monster',
-  'doodstream.com', 'dood.watch', 'dood.la', 'dood.wf',
-  'streamtape.com', 'streamtape.net', 'streamta.pe',
-  'upstream.to', 'rabbitstream.net', 'rapid-cloud.co',
-  'vidplay.online', 'vidplay.site', 'vidplay.lol',
-  'megacloud.tv', 'megacloud.ru',
+// Domains that are NEVER proxied regardless of token (privacy / abuse guard)
+const PROXY_BLOCKED = new Set([
+  'google.com', 'googleapis.com', 'facebook.com', 'twitter.com',
+  'instagram.com', 'reddit.com', 'wikipedia.org', 'github.com',
 ]);
 
 function proxyAllowed(hostname) {
   const h = (hostname || '').toLowerCase();
-  for (const d of PROXY_ALLOWED) {
-    if (h === d || h.endsWith('.' + d)) return true;
+  // Block clearly non-video domains
+  for (const d of PROXY_BLOCKED) {
+    if (h === d || h.endsWith('.' + d)) return false;
   }
-  return false;
+  // Everything else is allowed — the app-side token ensures only N Streams
+  // clients hit this endpoint, so we don't need a strict CDN whitelist.
+  return true;
 }
 
+const PROXY_TOKEN = process.env.PROXY_TOKEN || 'nstreams-crew-proxy-2026';
+
 app.get('/proxy', async (req, res) => {
+  // Require the app token so random internet users can't use our relay as a free proxy
+  if (req.headers['x-nstreams-proxy'] !== PROXY_TOKEN) {
+    return res.status(403).json({ error: 'unauthorized' });
+  }
+
   const { url } = req.query;
   if (!url) return res.status(400).json({ error: 'url required' });
 

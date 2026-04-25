@@ -1,0 +1,21 @@
+{
+  "name": "nstreams-discord-bot",
+  "version": "1.0.0",
+  "description": "N Games ecosystem Discord bot — wall posts, achievements, game updates",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js",
+    "setup": "node scripts/setup-bot.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.15.0",
+    "ws": "^8.18.0",
+    "node-fetch": "^3.3.2",
+    "dotenv": "^16.4.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "license": "MIT"
+}

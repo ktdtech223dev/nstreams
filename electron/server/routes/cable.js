@@ -103,6 +103,7 @@ router.get('/cable/channels', async (req, res) => {
         category: c.category || 'Uncategorized',
         slug:     c.slug || c.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
         logo:     c.thumbnail || null,
+        hlsUrl:   c.stitched?.urls?.[0]?.url || null,
         timelines: (c.timelines || []).map(t => ({
           start:       t.start,
           stop:        t.stop,
@@ -129,6 +130,89 @@ router.get('/cable/local-news', (req, res) => {
   const match   = Object.keys(LOCAL_NEWS).find(k => city.includes(k) || k.includes(city));
   const stations = match ? LOCAL_NEWS[match] : [];
   res.json({ city: match || city, stations });
+});
+
+// ─── GET /api/cable/player?src=<hlsUrl>&title=<title> ────────────────────────
+// Returns a self-contained HTML page that plays an HLS stream using hls.js.
+// Opened in the N Streams BrowserView player so it inherits the app's UA.
+router.get('/cable/player', (req, res) => {
+  const src   = req.query.src   || '';
+  const title = String(req.query.title || 'Live TV').replace(/[<>"]/g, '');
+
+  if (!src) return res.status(400).send('<h1>Missing ?src= parameter</h1>');
+
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(`<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>${title}</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    html, body { width:100%; height:100%; background:#000; overflow:hidden; }
+    video { width:100%; height:100%; display:block; background:#000; }
+    #err {
+      display:none; position:fixed; inset:0; background:#000;
+      color:#aaa; font-family:monospace; font-size:13px;
+      align-items:center; justify-content:center; flex-direction:column; gap:12px;
+    }
+    #err.show { display:flex; }
+    #err a { color:#ffd700; }
+  </style>
+</head>
+<body>
+  <video id="v" controls autoplay playsinline></video>
+  <div id="err">
+    <div id="msg">Loading…</div>
+    <a id="fallback" href="#" style="display:none">Open on Pluto.tv ↗</a>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js"></script>
+  <script>
+    var video = document.getElementById('v');
+    var err   = document.getElementById('err');
+    var msg   = document.getElementById('msg');
+    var src   = ${JSON.stringify(src)};
+
+    function showErr(text, fallbackUrl) {
+      msg.textContent = text;
+      err.classList.add('show');
+      if (fallbackUrl) {
+        var a = document.getElementById('fallback');
+        a.href = fallbackUrl;
+        a.style.display = '';
+        a.onclick = function(e) { e.preventDefault(); window.open(fallbackUrl); };
+      }
+    }
+
+    if (!src) {
+      showErr('No stream URL provided.');
+    } else if (typeof Hls === 'undefined') {
+      showErr('hls.js could not load — check internet connection.');
+    } else if (Hls.isSupported()) {
+      var hls = new Hls({ enableWorker: false, xhrSetup: function(xhr) {
+        xhr.setRequestHeader('Referer', 'https://pluto.tv/');
+      }});
+      hls.loadSource(src);
+      hls.attachMedia(video);
+      hls.on(Hls.Events.MANIFEST_PARSED, function() { video.play().catch(function(){}); });
+      hls.on(Hls.Events.ERROR, function(_, data) {
+        if (data.fatal) {
+          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+            showErr('Network error loading stream. The channel may be geo-restricted.');
+          } else {
+            showErr('Stream error: ' + (data.details || 'unknown'));
+          }
+        }
+      });
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      video.src = src;
+      video.play().catch(function(){});
+    } else {
+      showErr('HLS playback is not supported.');
+    }
+  </script>
+</body>
+</html>`);
 });
 
 module.exports = router;

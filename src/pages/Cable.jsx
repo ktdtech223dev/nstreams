@@ -1,80 +1,101 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Tv, MapPin, Play, RefreshCw, ChevronRight, Radio } from 'lucide-react';
-import api from '../api';
+import { Play, RefreshCw, Tv, Radio } from 'lucide-react';
+import api, { API_PORT } from '../api';
 import { useApp } from '../App';
 
-// ─── EPG constants ────────────────────────────────────────────────────────────
-const PX_PER_MIN   = 4;   // pixels per minute in the grid
-const LABEL_W      = 148; // channel label column width
-const ROW_H        = 52;  // each channel row height
-const HEADER_H     = 36;  // time header height
+// ─── EPG layout ───────────────────────────────────────────────────────────────
+const PX_PER_MIN = 4;
+const LABEL_W    = 124;   // channel-label column (sticky left)
+const ROW_H      = 42;    // each channel row
+const HEADER_H   = 30;    // time header bar height
+
+// ─── Early-2000s cable-box colour palette ─────────────────────────────────────
+const C = {
+  bg:         '#060613',
+  label:      '#040420',
+  labelSel:   '#001448',
+  rowA:       '#07072a',
+  rowB:       '#05051f',
+  nowCell:    '#001d55',
+  selCell:    '#002f88',
+  header:     '#0b3c0b',    // dark-green time bar (Charter reference)
+  headerText: '#a0ffa0',
+  headerGrid: '#1a5a1a',
+  border:     '#0f0f36',
+  bottomBar:  '#030320',
+  nowLine:    '#ff2525',
+  gold:       '#ffd700',
+  green:      '#3dcc3d',
+  dimText:    '#484888',
+  midText:    '#8080b8',
+  brightText: '#c0c0ee',
+  white:      '#ffffff',
+};
+
+// ─── Channel abbreviation (TNCK, MSNBC style) ─────────────────────────────────
+const SKIP = new Set(['the','a','an','and','of','for','in','on','at','to','&','by','with','tv']);
+function abbr(name) {
+  const parts = name.split(/[\s\-&+]+/).filter(w => w && !SKIP.has(w.toLowerCase()));
+  const result = (parts.length ? parts : [name])
+    .map(w => (w.replace(/[^a-z0-9]/gi, '')[0] || '')).join('');
+  return (result || name.replace(/\W/g, '')).toUpperCase().slice(0, 5);
+}
+
+function fmt12(d) {
+  return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+}
 
 function epgStartTime() {
-  // Start 30 min before the current half-hour mark
-  const now  = Date.now();
-  const slot = Math.floor(now / (30 * 60 * 1000)) * (30 * 60 * 1000);
+  const slot = Math.floor(Date.now() / (30 * 60 * 1000)) * (30 * 60 * 1000);
   return new Date(slot - 30 * 60 * 1000);
 }
 
-function fmt12(date) {
-  return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+function currentProgram(ch, nowMs) {
+  return ch.timelines?.find(p =>
+    new Date(p.start).getTime() <= nowMs && new Date(p.stop).getTime() > nowMs
+  ) || ch.timelines?.[0] || null;
 }
 
-// ─── Colours for the retro cable aesthetic ────────────────────────────────────
-const CABLE_BG   = '#05051a';
-const GRID_LINE  = '#14144a';
-const LABEL_BG   = '#08083a';
-const NOW_COLOR  = '#ff3333';
-const GOLD       = '#ffd700';
-const DIM        = '#6060a0';
-
-// ─── Category pill colours ────────────────────────────────────────────────────
 const CAT_COLORS = {
-  'News':          '#e33',
-  'Movies':        '#a855f7',
-  'Comedy':        '#f59e0b',
-  'Drama':         '#3b82f6',
-  'Sports':        '#22c55e',
-  'Entertainment': '#ec4899',
-  'Kids':          '#06b6d4',
-  'Lifestyle':     '#84cc16',
-  'Thrillers':     '#6366f1',
-  'Music':         '#f97316',
+  News:'#b02828', Movies:'#7a28c0', Comedy:'#b86800', Drama:'#1a44aa',
+  Sports:'#148830', Entertainment:'#a82070', Kids:'#0880a0',
+  Lifestyle:'#507800', Thrillers:'#383880', Music:'#a04000',
 };
-function catColor(cat) { return CAT_COLORS[cat] || '#6366f1'; }
+function catColor(c) { return CAT_COLORS[c] || '#404080'; }
 
 // ─── Main component ───────────────────────────────────────────────────────────
 export default function Cable() {
-  const { openPlayer, showToast } = useApp();
+  const { openPlayer } = useApp();
 
-  const [channels, setChannels]       = useState([]);
-  const [loading, setLoading]         = useState(true);
-  const [error, setError]             = useState(null);
-  const [category, setCategory]       = useState('All');
-  const [selected, setSelected]       = useState(null);   // { channel, program }
-  const [location, setLocation]       = useState('');
-  const [localNews, setLocalNews]     = useState([]);
-  const [now, setNow]                 = useState(new Date());
-  const epgStart                      = useRef(epgStartTime());
-  const gridRef                       = useRef(null);
+  const [channels, setChannels]   = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [error, setError]         = useState(null);
+  const [category, setCategory]   = useState('All');
+  const [selected, setSelected]   = useState(null);
+  const [localNews, setLocalNews] = useState([]);
+  const [location, setLocation]   = useState('');
+  const [showLocal, setShowLocal] = useState(false);
+  const [now, setNow]             = useState(new Date());
+  const epgStart                  = useRef(epgStartTime());
+  const gridRef                   = useRef(null);
+  const wrapRef                   = useRef(null);
 
-  // Clock tick every 60s
+  // Clock — tick every 60 s
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(t);
   }, []);
 
-  // Load channels
+  // Load channels from Pluto TV (via local cache)
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const data = await api.get('/cable/channels');
       setChannels(data);
-      if (data.length && !selected) {
-        const ch  = data[0];
-        const prg = currentProgram(ch, new Date());
-        setSelected({ channel: ch, program: prg });
+      if (data.length) {
+        const ch = data[0];
+        setSelected({ channel: ch, program: currentProgram(ch, Date.now()) });
       }
     } catch (e) {
       setError(e.message);
@@ -82,17 +103,16 @@ export default function Cable() {
       setLoading(false);
     }
   }, []);
-
   useEffect(() => { load(); }, [load]);
 
-  // Restore saved location
+  // Restore saved city
   useEffect(() => {
     window.electron?.getStore('cable_location')
       .then(v => { if (v) setLocation(v); })
       .catch(() => {});
   }, []);
 
-  // Fetch local news when location changes
+  // Load local news stations when city changes
   useEffect(() => {
     if (!location.trim()) { setLocalNews([]); return; }
     api.get(`/cable/local-news?city=${encodeURIComponent(location.trim())}`)
@@ -100,405 +120,264 @@ export default function Cable() {
       .catch(() => {});
   }, [location]);
 
-  // Scroll grid to ~30 min before current time on first load
+  // Auto-scroll to "now" on first channel load
   useEffect(() => {
     if (!gridRef.current || !channels.length) return;
-    const msElapsed = now - epgStart.current;
-    const px        = (msElapsed / 60_000) * PX_PER_MIN;
-    gridRef.current.scrollLeft = Math.max(0, px - 80);
+    const px = (Date.now() - epgStart.current.getTime()) / 60_000 * PX_PER_MIN;
+    gridRef.current.scrollLeft = Math.max(0, px - 120);
   }, [channels.length]); // eslint-disable-line
 
-  function currentProgram(channel, atTime) {
-    const t = atTime.getTime();
-    return channel.timelines?.find(p =>
-      new Date(p.start).getTime() <= t && new Date(p.stop).getTime() > t
-    ) || channel.timelines?.[0] || null;
+  function selectCh(ch, prg) {
+    setSelected({ channel: ch, program: prg || currentProgram(ch, Date.now()) });
   }
 
-  function selectChannel(ch, prg) {
-    setSelected({ channel: ch, program: prg || currentProgram(ch, now) });
-  }
-
-  function watchChannel(ch, prg) {
-    const url = `https://pluto.tv/live-tv/${ch.slug}`;
+  function watchCh(ch, prg) {
+    const url = ch.hlsUrl
+      ? `http://localhost:${API_PORT}/api/cable/player?src=${encodeURIComponent(ch.hlsUrl)}&title=${encodeURIComponent(ch.name + (prg ? ' — ' + prg.title : ''))}`
+      : `https://pluto.tv/live-tv/${ch.slug}`;
     openPlayer({
       url,
       title: `Ch ${ch.number} — ${ch.name}${prg ? ' · ' + prg.title : ''}`,
       contentId: null,
-      watchlistId: null,
     });
   }
 
-  function watchLocalNews(station) {
-    openPlayer({
-      url: station.url,
-      title: station.name + ' — Live',
-      contentId: null,
-      watchlistId: null,
-    });
+  function watchNews(s) {
+    openPlayer({ url: s.url, title: s.name + ' — Live', contentId: null });
+    setShowLocal(false);
   }
 
-  // Derive category list
-  const categories = ['All', ...Array.from(new Set(channels.map(c => c.category))).sort()];
-
-  const filtered = category === 'All'
-    ? channels
-    : channels.filter(c => c.category === category);
-
-  const selCh  = selected?.channel;
-  const selPrg = selected?.program;
-
-  // Time slots across the top (every 30 min, covering 8 hours from epgStart)
-  const timeSlots = Array.from({ length: 17 }, (_, i) =>
+  // Derived values
+  const nowMs       = now.getTime();
+  const categories  = ['All', ...Array.from(new Set(channels.map(c => c.category))).sort()];
+  const filtered    = category === 'All' ? channels : channels.filter(c => c.category === category);
+  const timeSlots   = Array.from({ length: 17 }, (_, i) =>
     new Date(epgStart.current.getTime() + i * 30 * 60 * 1000)
   );
-
-  const nowOffsetPx = Math.max(0, (now - epgStart.current) / 60_000 * PX_PER_MIN);
-  const totalGridW  = 8 * 60 * PX_PER_MIN; // 8 hours worth
+  const totalGridW  = 8 * 60 * PX_PER_MIN;
+  const nowOffsetPx = Math.max(0, (nowMs - epgStart.current.getTime()) / 60_000 * PX_PER_MIN);
+  const selCh       = selected?.channel;
+  const selPrg      = selected?.program;
 
   return (
     <div
-      className="flex flex-col h-full select-none"
-      style={{ background: CABLE_BG, color: '#fff', fontFamily: 'inherit' }}
+      ref={wrapRef}
+      style={{
+        display: 'flex', flexDirection: 'column', height: '100%',
+        background: C.bg, color: C.brightText, fontFamily: 'monospace',
+        userSelect: 'none', overflow: 'hidden', position: 'relative',
+      }}
     >
-      {/* ── Top info panel ──────────────────────────────────────────────── */}
-      <div
-        className="flex shrink-0 border-b"
-        style={{ borderColor: GRID_LINE, minHeight: 160 }}
-      >
-        {/* Now-playing info */}
-        <div className="flex-1 flex flex-col justify-between p-5 gap-3">
-          {selCh ? (
-            <>
-              <div className="flex items-start gap-4">
-                <div
-                  className="shrink-0 w-12 h-12 rounded-lg flex items-center justify-center text-lg font-mono font-bold border"
-                  style={{ borderColor: GRID_LINE, background: LABEL_BG, color: GOLD }}
-                >
-                  {selCh.number}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-xs tracking-widest uppercase mb-1" style={{ color: DIM }}>
-                    Now Playing
-                  </div>
-                  <div className="text-white font-bold text-lg leading-tight truncate">
-                    {selPrg?.title || 'Live TV'}
-                  </div>
-                  <div className="text-sm mt-0.5" style={{ color: GOLD }}>
-                    {selCh.name}
-                    {selPrg && (
-                      <span style={{ color: DIM }} className="ml-2">
-                        · {fmt12(new Date(selPrg.start))} – {fmt12(new Date(selPrg.stop))}
-                      </span>
-                    )}
-                  </div>
-                  {selPrg?.description && (
-                    <p className="text-xs mt-1 line-clamp-2" style={{ color: DIM }}>
-                      {selPrg.description}
-                    </p>
-                  )}
-                </div>
+      {/* ════════════════════════════════════════════════════════════════════
+          TOP INFO STRIP — selected channel / current program
+      ════════════════════════════════════════════════════════════════════ */}
+      <div style={{
+        flexShrink: 0, display: 'flex', alignItems: 'center', gap: 16,
+        background: C.label, borderBottom: `2px solid ${C.border}`,
+        padding: '10px 16px', minHeight: 82,
+      }}>
+        {selCh ? (
+          <>
+            {/* Channel badge (number + abbr) */}
+            <div style={{ textAlign: 'center', minWidth: 64, flexShrink: 0 }}>
+              <div style={{ fontSize: 34, fontWeight: 900, color: C.gold, lineHeight: 1 }}>
+                {selCh.number}
               </div>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => watchChannel(selCh, selPrg)}
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition hover:opacity-90"
-                  style={{ background: GOLD, color: '#000' }}
-                >
-                  <Play size={14} fill="currentColor" /> Watch Now
-                </button>
-                <span
-                  className="px-3 py-2 rounded-lg text-xs font-medium border flex items-center gap-1"
-                  style={{ borderColor: catColor(selCh.category) + '66', color: catColor(selCh.category) }}
-                >
-                  {selCh.category}
-                </span>
+              <div style={{ fontSize: 10, color: C.midText, marginTop: 2, letterSpacing: 3 }}>
+                {abbr(selCh.name)}
               </div>
-            </>
-          ) : (
-            <div className="text-sm" style={{ color: DIM }}>Select a channel</div>
-          )}
-        </div>
-
-        {/* Local news panel */}
-        <div
-          className="w-72 shrink-0 flex flex-col border-l p-4 gap-2"
-          style={{ borderColor: GRID_LINE }}
-        >
-          <div className="flex items-center gap-2 mb-1">
-            <MapPin size={13} style={{ color: GOLD }} />
-            <span className="text-xs tracking-widest uppercase font-semibold" style={{ color: GOLD }}>
-              Local News
-            </span>
-          </div>
-          {localNews.length > 0 ? (
-            <div className="flex flex-col gap-1 flex-1 overflow-y-auto">
-              {localNews.map(s => (
-                <button
-                  key={s.id}
-                  onClick={() => watchLocalNews(s)}
-                  className="flex items-center gap-3 px-3 py-2 rounded-lg text-left transition text-sm"
-                  style={{ background: LABEL_BG }}
-                  onMouseEnter={e => e.currentTarget.style.background = '#14144a'}
-                  onMouseLeave={e => e.currentTarget.style.background = LABEL_BG}
-                >
-                  <span className="text-base">{s.logo}</span>
-                  <span className="flex-1 text-white truncate">{s.name}</span>
-                  <span className="text-xs px-1.5 py-0.5 rounded text-black font-bold" style={{ background: '#ff3333' }}>LIVE</span>
-                </button>
-              ))}
             </div>
-          ) : (
-            <div className="text-xs flex-1 flex flex-col items-center justify-center gap-2 text-center" style={{ color: DIM }}>
-              <Radio size={20} />
-              <span>Set your city in<br/>Settings → Cable TV</span>
-            </div>
-          )}
-        </div>
 
-        {/* Category filter strip */}
-        <div
-          className="w-52 shrink-0 flex flex-col border-l overflow-y-auto"
-          style={{ borderColor: GRID_LINE }}
-        >
-          <div className="px-3 pt-3 pb-1 text-[10px] tracking-widest uppercase font-semibold" style={{ color: DIM }}>
-            Category
-          </div>
-          {categories.map(cat => (
+            {/* Separator */}
+            <div style={{ width: 1, alignSelf: 'stretch', background: C.border, flexShrink: 0 }} />
+
+            {/* Program info */}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 9, letterSpacing: 3, color: C.dimText, textTransform: 'uppercase', marginBottom: 3 }}>
+                NOW PLAYING
+              </div>
+              <div style={{ fontSize: 15, fontWeight: 700, color: C.white, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {selPrg?.title || 'Live TV'}
+              </div>
+              <div style={{ fontSize: 11, color: C.midText, marginTop: 2 }}>
+                {selCh.name}
+                {selPrg && (
+                  <span style={{ color: C.dimText }}>
+                    &nbsp;·&nbsp;{fmt12(new Date(selPrg.start))} – {fmt12(new Date(selPrg.stop))}
+                  </span>
+                )}
+              </div>
+              {selPrg?.description && (
+                <div style={{ fontSize: 10, color: C.dimText, marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {selPrg.description}
+                </div>
+              )}
+            </div>
+
+            {/* WATCH button */}
             <button
-              key={cat}
-              onClick={() => setCategory(cat)}
-              className="px-4 py-2 text-left text-sm flex items-center gap-2 transition"
+              onClick={() => watchCh(selCh, selPrg)}
               style={{
-                background:  category === cat ? catColor(cat) + '22' : 'transparent',
-                color:       category === cat ? catColor(cat) : DIM,
-                borderLeft:  category === cat ? `3px solid ${catColor(cat)}` : '3px solid transparent',
+                flexShrink: 0, background: C.gold, color: '#000',
+                fontWeight: 800, fontSize: 11, letterSpacing: 2, textTransform: 'uppercase',
+                padding: '8px 18px', border: 'none', borderRadius: 2, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: 6,
               }}
             >
-              {cat === 'All'
-                ? <Tv size={13} />
-                : <span className="w-2 h-2 rounded-full shrink-0" style={{ background: catColor(cat) }} />
-              }
-              {cat}
+              <Play size={12} fill="#000" strokeWidth={0} />
+              WATCH
             </button>
-          ))}
-        </div>
+          </>
+        ) : (
+          <div style={{ flex: 1, color: C.dimText, fontSize: 11 }}>Select a channel below…</div>
+        )}
       </div>
 
-      {/* ── EPG grid ────────────────────────────────────────────────────── */}
+      {/* ════════════════════════════════════════════════════════════════════
+          EPG GRID
+      ════════════════════════════════════════════════════════════════════ */}
       {loading ? (
-        <div className="flex-1 flex items-center justify-center gap-3" style={{ color: DIM }}>
-          <RefreshCw size={18} className="animate-spin" />
-          <span className="text-sm">Tuning in…</span>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10, color: C.dimText }}>
+          <RefreshCw size={16} className="animate-spin" />
+          <span style={{ fontSize: 12 }}>Tuning in…</span>
         </div>
       ) : error ? (
-        <div className="flex-1 flex flex-col items-center justify-center gap-4" style={{ color: DIM }}>
-          <Tv size={32} />
-          <div className="text-sm">Could not reach Pluto TV — {error}</div>
-          <button
-            onClick={load}
-            className="px-4 py-2 rounded-lg text-sm"
-            style={{ background: GOLD, color: '#000', fontWeight: 600 }}
-          >
-            Retry
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12, color: C.dimText }}>
+          <Tv size={28} />
+          <div style={{ fontSize: 12 }}>Signal lost — {error}</div>
+          <button onClick={load} style={{ background: C.gold, color: '#000', fontSize: 11, fontWeight: 700, padding: '6px 16px', border: 'none', cursor: 'pointer', borderRadius: 2 }}>
+            RETRY
           </button>
         </div>
       ) : (
-        <div
-          ref={gridRef}
-          className="flex-1 overflow-auto"
-          style={{ scrollBehavior: 'auto' }}
-        >
+        <div ref={gridRef} style={{ flex: 1, overflow: 'auto', scrollBehavior: 'auto' }}>
           <div style={{ minWidth: LABEL_W + totalGridW, position: 'relative' }}>
 
-            {/* ── Sticky time header row ── */}
-            <div
-              style={{
-                display: 'flex',
-                position: 'sticky',
-                top: 0,
-                zIndex: 20,
-                background: CABLE_BG,
-                borderBottom: `1px solid ${GRID_LINE}`,
-                height: HEADER_H,
-              }}
-            >
-              {/* Corner */}
-              <div
-                style={{
-                  width: LABEL_W, flexShrink: 0, position: 'sticky', left: 0,
-                  background: LABEL_BG, zIndex: 25,
-                  display: 'flex', alignItems: 'center', paddingLeft: 12,
-                  borderRight: `1px solid ${GRID_LINE}`,
-                  borderBottom: `1px solid ${GRID_LINE}`,
-                }}
-              >
-                <Tv size={14} style={{ color: GOLD }} />
-                <span className="ml-2 text-xs font-mono font-bold" style={{ color: GOLD }}>
+            {/* ── Sticky time-header row (dark green — Charter style) ── */}
+            <div style={{
+              display: 'flex', position: 'sticky', top: 0, zIndex: 20,
+              borderBottom: `1px solid ${C.border}`, height: HEADER_H,
+            }}>
+              {/* Corner — clock */}
+              <div style={{
+                width: LABEL_W, flexShrink: 0, position: 'sticky', left: 0, zIndex: 25,
+                background: C.header, borderRight: `1px solid ${C.headerGrid}`,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5,
+              }}>
+                <Tv size={12} style={{ color: C.gold }} />
+                <span style={{ fontSize: 10, color: C.gold, fontWeight: 700, letterSpacing: 1 }}>
                   {fmt12(now)}
                 </span>
               </div>
 
-              {/* Time labels */}
-              <div style={{ position: 'relative', flex: 1 }}>
+              {/* Time slot labels */}
+              <div style={{ flex: 1, position: 'relative', background: C.header }}>
                 {timeSlots.map((slot, i) => (
                   <div
                     key={i}
                     style={{
-                      position: 'absolute',
-                      left: i * 30 * PX_PER_MIN,
-                      top: 0,
-                      width: 30 * PX_PER_MIN,
-                      height: HEADER_H,
-                      display: 'flex',
-                      alignItems: 'center',
-                      paddingLeft: 8,
-                      fontSize: 11,
-                      fontFamily: 'monospace',
-                      color: DIM,
-                      borderRight: `1px solid ${GRID_LINE}`,
-                      boxSizing: 'border-box',
+                      position: 'absolute', left: i * 30 * PX_PER_MIN, top: 0,
+                      width: 30 * PX_PER_MIN, height: HEADER_H,
+                      display: 'flex', alignItems: 'center', paddingLeft: 6,
+                      fontSize: 10, color: C.headerText, fontWeight: 600, letterSpacing: 0.5,
+                      borderRight: `1px solid ${C.headerGrid}`, boxSizing: 'border-box',
                     }}
                   >
                     {fmt12(slot)}
                   </div>
                 ))}
-
-                {/* Current time line in header */}
+                {/* Current-time line in header */}
                 <div style={{
-                  position: 'absolute',
-                  left: nowOffsetPx,
-                  top: 0,
-                  width: 2,
-                  height: HEADER_H,
-                  background: NOW_COLOR,
-                  zIndex: 10,
+                  position: 'absolute', left: nowOffsetPx, top: 0,
+                  width: 2, height: HEADER_H, background: C.nowLine, zIndex: 10,
                 }} />
               </div>
             </div>
 
             {/* ── Channel rows ── */}
-            {filtered.map(ch => {
+            {filtered.map((ch, ri) => {
               const isSelected = selCh?.id === ch.id;
               return (
                 <div
                   key={ch.id}
-                  style={{ display: 'flex', height: ROW_H, borderBottom: `1px solid ${GRID_LINE}` }}
+                  style={{
+                    display: 'flex', height: ROW_H,
+                    borderBottom: `1px solid ${C.border}`,
+                    background: ri % 2 === 0 ? C.rowA : C.rowB,
+                  }}
                 >
-                  {/* Channel label (sticky left) */}
+                  {/* Channel label — sticky left */}
                   <button
-                    onClick={() => selectChannel(ch)}
+                    onClick={() => selectCh(ch)}
+                    onDoubleClick={() => watchCh(ch)}
+                    title={`${ch.name} — double-click to watch`}
                     style={{
-                      width: LABEL_W,
-                      flexShrink: 0,
-                      position: 'sticky',
-                      left: 0,
-                      zIndex: 10,
-                      background: isSelected ? '#14144a' : LABEL_BG,
-                      borderRight: `1px solid ${GRID_LINE}`,
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      padding: '0 10px',
-                      cursor: 'pointer',
-                      transition: 'background 0.15s',
+                      width: LABEL_W, flexShrink: 0, position: 'sticky', left: 0, zIndex: 10,
+                      background: isSelected ? C.labelSel : C.label,
+                      borderRight: `1px solid ${C.border}`,
+                      display: 'flex', alignItems: 'center', gap: 8, padding: '0 10px',
+                      cursor: 'pointer', border: 'none', outline: 'none', textAlign: 'left',
                     }}
-                    onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = '#10103a'; }}
-                    onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = LABEL_BG; }}
                   >
-                    <span
-                      style={{
-                        fontFamily: 'monospace',
-                        fontSize: 12,
-                        fontWeight: 700,
-                        color: isSelected ? GOLD : DIM,
-                        minWidth: 28,
-                        textAlign: 'right',
-                      }}
-                    >
+                    {/* Abbreviated name (MSNBC, TNCK, CNN…) */}
+                    <span style={{
+                      fontFamily: 'monospace', fontSize: 11, fontWeight: 700, letterSpacing: 1,
+                      color: isSelected ? C.white : C.brightText,
+                      flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }}>
+                      {abbr(ch.name)}
+                    </span>
+                    {/* Channel number */}
+                    <span style={{
+                      fontFamily: 'monospace', fontSize: 11, fontWeight: 700,
+                      color: isSelected ? C.gold : C.dimText,
+                      minWidth: 28, textAlign: 'right', flexShrink: 0,
+                    }}>
                       {ch.number}
                     </span>
-                    <span
-                      style={{
-                        fontSize: 11,
-                        fontWeight: 600,
-                        color: isSelected ? '#fff' : '#9090c0',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                        flex: 1,
-                      }}
-                    >
-                      {ch.name}
-                    </span>
-                    {isSelected && <ChevronRight size={12} style={{ color: GOLD, flexShrink: 0 }} />}
                   </button>
 
                   {/* Program blocks */}
                   <div style={{ position: 'relative', flex: 1, overflow: 'hidden' }}>
                     {ch.timelines?.map((prg, pi) => {
-                      const pStart  = new Date(prg.start);
-                      const pStop   = new Date(prg.stop);
-                      const leftPx  = (pStart - epgStart.current) / 60_000 * PX_PER_MIN;
-                      const widthPx = (pStop  - pStart)            / 60_000 * PX_PER_MIN;
+                      const pStart  = new Date(prg.start).getTime();
+                      const pStop   = new Date(prg.stop).getTime();
+                      const leftPx  = (pStart - epgStart.current.getTime()) / 60_000 * PX_PER_MIN;
+                      const widthPx = (pStop - pStart) / 60_000 * PX_PER_MIN;
                       if (leftPx + widthPx < 0 || leftPx > totalGridW) return null;
 
-                      const isNow = now >= pStart && now < pStop;
+                      const isNow = nowMs >= pStart && nowMs < pStop;
                       const isSel = isSelected && selPrg?.start === prg.start;
 
                       return (
                         <button
                           key={pi}
-                          onClick={() => {
-                            selectChannel(ch, prg);
-                          }}
-                          onDoubleClick={() => watchChannel(ch, prg)}
-                          title={`${prg.title} · ${fmt12(pStart)} – ${fmt12(pStop)}\nDouble-click to watch`}
+                          onClick={() => selectCh(ch, prg)}
+                          onDoubleClick={() => watchCh(ch, prg)}
+                          title={`${prg.title}\n${fmt12(new Date(pStart))} – ${fmt12(new Date(pStop))}\nDouble-click to watch`}
                           style={{
                             position: 'absolute',
-                            left:     Math.max(0, leftPx),
-                            width:    Math.min(widthPx, totalGridW - Math.max(0, leftPx)) - 2,
-                            top: 4,
-                            height: ROW_H - 8,
-                            background: isSel
-                              ? catColor(ch.category) + '44'
-                              : isNow
-                                ? '#14144a'
-                                : '#09092e',
-                            border: `1px solid ${isSel ? catColor(ch.category) : isNow ? catColor(ch.category) + '66' : GRID_LINE}`,
-                            borderRadius: 4,
-                            display: 'flex',
-                            alignItems: 'center',
-                            padding: '0 8px',
-                            cursor: 'pointer',
-                            overflow: 'hidden',
-                            boxSizing: 'border-box',
-                            transition: 'background 0.1s',
+                            left: Math.max(0, leftPx),
+                            width: Math.min(widthPx, totalGridW - Math.max(0, leftPx)) - 1,
+                            top: 1, height: ROW_H - 2,
+                            background: isSel ? C.selCell : isNow ? C.nowCell : 'transparent',
+                            border: `1px solid ${isSel ? '#003caa' : isNow ? '#002870' : C.border}`,
+                            borderRadius: 0, cursor: 'pointer', padding: '0 6px',
+                            display: 'flex', alignItems: 'center', overflow: 'hidden',
+                            boxSizing: 'border-box', outline: 'none',
                           }}
                         >
-                          <span
-                            style={{
-                              fontSize: 11,
-                              fontWeight: isNow ? 600 : 400,
-                              color: isNow ? '#fff' : '#8888bb',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
-                            }}
-                          >
+                          <span style={{
+                            fontSize: 11,
+                            color: isNow ? C.white : C.midText,
+                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                            display: 'flex', alignItems: 'center', gap: 5, width: '100%',
+                          }}>
+                            {/* ◄◄ indicator on the currently-airing block */}
                             {isNow && (
-                              <span
-                                style={{
-                                  display: 'inline-block',
-                                  width: 6,
-                                  height: 6,
-                                  borderRadius: '50%',
-                                  background: NOW_COLOR,
-                                  marginRight: 5,
-                                  verticalAlign: 'middle',
-                                  marginTop: -1,
-                                }}
-                              />
+                              <span style={{ color: C.green, fontWeight: 700, flexShrink: 0, fontSize: 10 }}>
+                                ◄◄
+                              </span>
                             )}
                             {prg.title}
                           </span>
@@ -506,20 +385,12 @@ export default function Cable() {
                       );
                     })}
 
-                    {/* Current-time red line */}
+                    {/* Current-time red line through program rows */}
                     {nowOffsetPx >= 0 && nowOffsetPx <= totalGridW && (
-                      <div
-                        style={{
-                          position: 'absolute',
-                          left: nowOffsetPx,
-                          top: 0,
-                          width: 2,
-                          height: ROW_H,
-                          background: NOW_COLOR,
-                          zIndex: 5,
-                          pointerEvents: 'none',
-                        }}
-                      />
+                      <div style={{
+                        position: 'absolute', left: nowOffsetPx, top: 0,
+                        width: 2, height: ROW_H, background: C.nowLine, zIndex: 5, pointerEvents: 'none',
+                      }} />
                     )}
                   </div>
                 </div>
@@ -529,28 +400,130 @@ export default function Cable() {
         </div>
       )}
 
-      {/* ── Status bar ──────────────────────────────────────────────────── */}
-      <div
-        className="shrink-0 flex items-center justify-between px-4 py-1.5 text-xs border-t"
-        style={{ background: LABEL_BG, borderColor: GRID_LINE, color: DIM }}
-      >
-        <div className="flex items-center gap-3">
-          <span style={{ color: GOLD }} className="font-mono font-bold">N STREAMS CABLE</span>
-          <span>·</span>
-          <span>{filtered.length} channels</span>
-          {category !== 'All' && <span style={{ color: catColor(category) }}>{category}</span>}
+      {/* ════════════════════════════════════════════════════════════════════
+          BOTTOM NAV BAR — categories + status
+      ════════════════════════════════════════════════════════════════════ */}
+      <div style={{
+        flexShrink: 0, background: C.bottomBar, borderTop: `2px solid ${C.border}`,
+        display: 'flex', alignItems: 'center', gap: 2,
+        padding: '4px 8px', minHeight: 36,
+      }}>
+        {/* Category buttons */}
+        <div style={{ display: 'flex', gap: 1, flex: 1, overflowX: 'auto', scrollbarWidth: 'none' }}>
+          {categories.map(cat => {
+            const active = category === cat && !showLocal;
+            const cc     = cat === 'All' ? C.gold : catColor(cat);
+            return (
+              <button
+                key={cat}
+                onClick={() => { setCategory(cat); setShowLocal(false); }}
+                style={{
+                  padding: '3px 10px', fontSize: 10, fontFamily: 'monospace',
+                  fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase',
+                  cursor: 'pointer', border: 'none', borderRadius: 2, whiteSpace: 'nowrap',
+                  background: active ? cc : 'transparent',
+                  color:      active ? (cat === 'All' ? '#000' : '#fff') : C.midText,
+                }}
+              >
+                {cat}
+              </button>
+            );
+          })}
+
+          {/* Local news toggle */}
+          <button
+            onClick={() => setShowLocal(v => !v)}
+            style={{
+              padding: '3px 10px', fontSize: 10, fontFamily: 'monospace',
+              fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase',
+              cursor: 'pointer', border: 'none', borderRadius: 2, whiteSpace: 'nowrap',
+              background: showLocal ? '#1a4a1a' : 'transparent',
+              color:      showLocal ? C.green   : C.midText,
+            }}
+          >
+            📡 LOCAL
+          </button>
         </div>
-        <div className="flex items-center gap-4">
-          <span>Click to preview · Double-click to watch</span>
+
+        {/* Right status */}
+        <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 8, fontSize: 10, color: C.dimText }}>
+          <span>{filtered.length} ch</span>
+          <span style={{ color: C.border }}>│</span>
           <button
             onClick={load}
-            className="flex items-center gap-1 hover:opacity-100 transition"
-            style={{ opacity: 0.6 }}
+            style={{
+              background: 'none', border: 'none', cursor: 'pointer',
+              color: C.dimText, fontSize: 10, display: 'flex', alignItems: 'center', gap: 4,
+              fontFamily: 'monospace',
+            }}
           >
-            <RefreshCw size={11} /> Refresh
+            <RefreshCw size={10} />
+            REFRESH
           </button>
         </div>
       </div>
+
+      {/* ════════════════════════════════════════════════════════════════════
+          LOCAL NEWS OVERLAY PANEL (popup above bottom bar)
+      ════════════════════════════════════════════════════════════════════ */}
+      {showLocal && (
+        <div style={{
+          position: 'absolute', bottom: 40, right: 0,
+          width: 270, background: C.label,
+          border: `1px solid ${C.border}`, borderBottom: 'none',
+          borderRadius: '4px 4px 0 0',
+          maxHeight: 280, overflow: 'hidden',
+          display: 'flex', flexDirection: 'column', zIndex: 50,
+          boxShadow: '0 -4px 20px rgba(0,0,0,0.6)',
+        }}>
+          {/* Header */}
+          <div style={{
+            padding: '8px 12px', borderBottom: `1px solid ${C.border}`,
+            display: 'flex', alignItems: 'center', gap: 6,
+          }}>
+            <Radio size={12} style={{ color: C.green }} />
+            <span style={{ fontSize: 10, letterSpacing: 2, color: C.green, fontWeight: 700, textTransform: 'uppercase' }}>
+              Local News
+            </span>
+            {location && (
+              <span style={{ fontSize: 10, color: C.dimText, letterSpacing: 0, marginLeft: 2 }}>
+                — {location}
+              </span>
+            )}
+          </div>
+
+          {/* Station list */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: '4px 6px' }}>
+            {localNews.length > 0 ? localNews.map(s => (
+              <button
+                key={s.id}
+                onClick={() => watchNews(s)}
+                style={{
+                  width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+                  padding: '7px 10px', background: 'none', border: 'none',
+                  cursor: 'pointer', textAlign: 'left', borderRadius: 2,
+                  outline: 'none',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = '#0a0a30'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'none'; }}
+              >
+                <span style={{ fontSize: 16, flexShrink: 0 }}>{s.logo}</span>
+                <span style={{ fontSize: 11, color: C.brightText, flex: 1 }}>{s.name}</span>
+                <span style={{
+                  fontSize: 9, background: '#cc0000', color: '#fff',
+                  padding: '1px 5px', fontWeight: 700, borderRadius: 1, flexShrink: 0,
+                }}>
+                  LIVE
+                </span>
+              </button>
+            )) : (
+              <div style={{ padding: 16, textAlign: 'center', fontSize: 11, color: C.dimText, lineHeight: 1.6 }}>
+                Set your city in<br />Settings → Cable TV
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
