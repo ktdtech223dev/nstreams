@@ -45,6 +45,7 @@ app.use('/api', require('./electron/server/routes/sessions'));
 app.use('/api', require('./electron/server/routes/sync'));
 app.use('/api', require('./electron/server/routes/sports'));
 app.use('/api', require('./electron/server/routes/cable'));
+app.use('/api', require('./electron/server/routes/migrate'));
 
 app.get('/api/health', (req, res) =>
   res.json({ ok: true, mode: 'cloud', version: require('./package.json').version })

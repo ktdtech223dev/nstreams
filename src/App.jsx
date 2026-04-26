@@ -139,6 +139,36 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  // TV remote: arrow keys scroll the main content area when no interactive
+  // element is focused (the remote D-pad acts as scroll when pointer is idle).
+  useEffect(() => {
+    if (!window.Capacitor) return;
+    const STEP = 280;
+    const onKey = (e) => {
+      const focused = document.activeElement;
+      const isInteractive = focused && focused !== document.body &&
+        ['BUTTON','INPUT','TEXTAREA','SELECT','A'].includes(focused.tagName);
+      if (isInteractive) return; // let the element handle it
+      const main = document.querySelector('main[class*="overflow-y-auto"]');
+      if (!main) return;
+      if (e.key === 'ArrowDown') { main.scrollBy({ top: STEP, behavior: 'smooth' }); e.preventDefault(); }
+      if (e.key === 'ArrowUp')   { main.scrollBy({ top: -STEP, behavior: 'smooth' }); e.preventDefault(); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  // Apply TV edge-padding CSS variable from stored preference (Android only)
+  useEffect(() => {
+    if (!window.Capacitor) return;
+    import('@capacitor/preferences').then(({ Preferences }) => {
+      Preferences.get({ key: 'tv_edge_padding' }).then(({ value }) => {
+        const px = parseInt(value) || 0;
+        document.documentElement.style.setProperty('--tv-edge', `${px}px`);
+      });
+    });
+  }, []);
+
   async function refreshSessions() {
     try {
       const s = await api.activeSessions(activeUserId);
@@ -221,10 +251,12 @@ export default function App() {
   const chromeLess = page === 'player' || page === 'home';
   const fullHeight = page === 'player' || page === 'cable';
 
+  const isAndroid = !!window.Capacitor;
+
   return (
     <AppContext.Provider value={ctx}>
       <PartyProvider showToast={showToast}>
-        <div className="flex flex-col h-screen w-screen bg-bg">
+        <div className={`flex flex-col h-screen w-screen bg-bg tv-edge ${isAndroid ? 'tv-mode' : ''}`}>
           <TopNav page={page} setPage={setPage} searchRef={searchRef} />
           <div className="flex flex-1 overflow-hidden">
             <main className={`flex-1 relative ${fullHeight ? 'overflow-hidden' : 'overflow-y-auto'}`}>

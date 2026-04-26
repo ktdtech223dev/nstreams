@@ -1,7 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import api from '../api';
+import api, { API_PORT } from '../api';
 import { useApp } from '../App';
 import { useParty, DEFAULT_RELAY_URL } from '../party/PartyContext';
+
+const IS_ANDROID = typeof window !== 'undefined' && !!window.Capacitor;
+const RAILWAY_URL = 'https://nstreams-api-production.up.railway.app/api';
 
 export default function Settings() {
   const { users, activeUserId, switchUser, showToast, activeUser } = useApp();
@@ -127,6 +130,12 @@ export default function Settings() {
       <header>
         <h1 className="display-lg text-white">Settings</h1>
       </header>
+
+      {/* Cloud sync — shown on Electron (desktop) so you can link to Railway */}
+      {!IS_ANDROID && window.electron && <CloudSyncSection showToast={showToast} />}
+
+      {/* TV edge padding — shown on Android projector to fix overscan */}
+      {IS_ANDROID && <TvPaddingSection showToast={showToast} />}
 
       <Section title="Active User">
         <p className="text-muted text-sm mb-4">Who are you on this machine?</p>
@@ -935,6 +944,150 @@ function CableTvSection() {
           {saved ? '✓ Saved' : 'Save'}
         </button>
       </div>
+    </Section>
+  );
+}
+
+// ── Cloud Sync (Electron only) ────────────────────────────────────────────────
+function CloudSyncSection({ showToast }) {
+  const current = localStorage.getItem('nstreams_cloud_url');
+  const [url, setUrl] = useState(current || RAILWAY_URL);
+  const [migrating, setMigrating] = useState(false);
+  const [migrateResult, setMigrateResult] = useState(null);
+  const isCloud = !!current;
+
+  function enableCloud() {
+    localStorage.setItem('nstreams_cloud_url', url.trim());
+    showToast('Cloud sync enabled — reloading…');
+    setTimeout(() => window.location.reload(), 900);
+  }
+
+  function disableCloud() {
+    localStorage.removeItem('nstreams_cloud_url');
+    showToast('Switched to local — reloading…');
+    setTimeout(() => window.location.reload(), 900);
+  }
+
+  async function migrateToCloud() {
+    if (!isCloud) { showToast('Enable cloud sync first'); return; }
+    setMigrating(true);
+    setMigrateResult(null);
+    try {
+      // 1. Export from local Electron server
+      const exportRes = await fetch(`http://localhost:${API_PORT}/api/migrate/export`);
+      const exportData = await exportRes.json();
+
+      // 2. Import into Railway
+      const importRes = await fetch(`${url.replace(/\/$/, '')}/migrate/import`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(exportData),
+      });
+      const result = await importRes.json();
+      if (!result.ok) throw new Error(result.error || 'Import failed');
+
+      const { imported } = result;
+      setMigrateResult(`Migrated: ${imported.content} shows · ${imported.watchlist} watchlist entries · ${imported.episodeProgress} episode records · ${imported.activity} activity items`);
+      showToast('Migration complete ✓');
+    } catch (e) {
+      setMigrateResult(`Error: ${e.message}`);
+      showToast('Migration failed: ' + e.message);
+    } finally {
+      setMigrating(false);
+    }
+  }
+
+  return (
+    <Section title="☁ Cloud Sync">
+      <div className={`rounded-lg p-3 mb-4 border flex items-center gap-3 ${isCloud ? 'bg-green/10 border-green/30' : 'bg-bg3 border-border'}`}>
+        <span className={`w-3 h-3 rounded-full shrink-0 ${isCloud ? 'bg-green' : 'bg-muted'}`} />
+        <div>
+          <div className={`font-medium text-sm ${isCloud ? 'text-green' : 'text-muted'}`}>
+            {isCloud ? 'Cloud sync active — all devices share one database' : 'Local only — data stays on this machine'}
+          </div>
+          {isCloud && <div className="text-xs text-muted font-mono truncate mt-0.5">{current}</div>}
+        </div>
+      </div>
+
+      <p className="text-muted text-sm mb-4">
+        Sync your watchlist, crew activity, and watch history across all devices — desktop, Android projector, and future devices. Uses the N Streams Railway backend.
+      </p>
+
+      <label className="text-xs uppercase text-muted">Cloud API URL</label>
+      <div className="flex gap-2 mt-1 mb-3">
+        <input value={url} onChange={e => setUrl(e.target.value)} placeholder={RAILWAY_URL} className="input flex-1" />
+      </div>
+
+      <div className="flex flex-wrap gap-2 mb-4">
+        <button onClick={enableCloud} className="btn btn-primary">
+          {isCloud ? '⟳ Update & Reload' : '⚡ Enable Cloud Sync'}
+        </button>
+        {isCloud && (
+          <>
+            <button onClick={disableCloud} className="btn btn-ghost">Use Local Only</button>
+            <button onClick={migrateToCloud} disabled={migrating} className="btn btn-ghost disabled:opacity-50">
+              {migrating ? 'Migrating…' : '↑ Push Local Data to Cloud'}
+            </button>
+          </>
+        )}
+      </div>
+
+      {migrateResult && (
+        <div className="text-xs text-muted bg-bg3 rounded-lg p-3">{migrateResult}</div>
+      )}
+
+      {!isCloud && (
+        <p className="text-xs text-gold mt-2">
+          ⚠ After enabling, existing local data won't automatically appear on other devices until you click "Push Local Data to Cloud".
+        </p>
+      )}
+    </Section>
+  );
+}
+
+// ── TV Edge Padding (Android only) ────────────────────────────────────────────
+function TvPaddingSection({ showToast }) {
+  const [padding, setPadding] = useState(0);
+
+  useEffect(() => {
+    import('@capacitor/preferences').then(({ Preferences }) => {
+      Preferences.get({ key: 'tv_edge_padding' }).then(({ value }) => {
+        const v = parseInt(value) || 0;
+        setPadding(v);
+      });
+    });
+  }, []);
+
+  async function save(val) {
+    const px = Math.max(0, Math.min(80, val));
+    setPadding(px);
+    const { Preferences } = await import('@capacitor/preferences');
+    await Preferences.set({ key: 'tv_edge_padding', value: String(px) });
+    document.documentElement.style.setProperty('--tv-edge', `${px}px`);
+    showToast(`Edge padding: ${px}px`);
+  }
+
+  return (
+    <Section title="📺 Projector Display">
+      <p className="text-muted text-sm mb-4">
+        If your projector clips the edges of the image (overscan), increase the edge padding until all content is visible.
+      </p>
+      <div className="flex items-center gap-4">
+        <input
+          type="range" min={0} max={80} step={4} value={padding}
+          onChange={e => save(parseInt(e.target.value))}
+          className="flex-1 accent-accent"
+        />
+        <span className="text-white font-mono w-16 text-center">{padding}px</span>
+      </div>
+      <div className="flex gap-3 mt-3">
+        {[0, 16, 24, 32, 48].map(v => (
+          <button key={v} onClick={() => save(v)}
+            className={`btn text-xs ${padding === v ? 'btn-primary' : 'btn-ghost'}`}
+          >{v}px</button>
+        ))}
+      </div>
+      <p className="text-xs text-muted mt-3">Changes apply immediately — no restart needed.</p>
     </Section>
   );
 }

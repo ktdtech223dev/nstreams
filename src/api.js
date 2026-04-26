@@ -1,17 +1,29 @@
 // Android/Capacitor builds: VITE_API_URL is set at build time to the
 // Railway backend URL (e.g. https://nstreams-api.up.railway.app/api).
 // Electron builds: port is injected via ?apiPort= query param or defaults.
+// Electron + cloud sync: user sets nstreams_cloud_url in localStorage via Settings.
 const _viteApiUrl = import.meta.env?.VITE_API_URL;
 
-export const API_PORT = _viteApiUrl
-  ? null  // not applicable for remote API
-  : (typeof window !== 'undefined' && window.electron?.apiPort)
-      || parseInt(new URLSearchParams(window.location.search).get('apiPort'))
-      || 57832;
+// Cloud URL override — set via Settings › Cloud Sync (Electron only).
+// Not used on Android (VITE_API_URL already points to Railway).
+const _cloudUrl = (!_viteApiUrl && typeof localStorage !== 'undefined')
+  ? (localStorage.getItem('nstreams_cloud_url') || null)
+  : null;
+
+// Local server port — always the Electron localhost port.
+// Used by Cable (HLS proxy) regardless of cloud sync setting.
+export const API_PORT = (typeof window !== 'undefined' && window.electron?.apiPort)
+  || parseInt(new URLSearchParams(window.location.search).get('apiPort'))
+  || 57832;
+
+// Whether we're in cloud mode (either Android build or Electron with cloud sync enabled)
+export const IS_CLOUD = !!(_viteApiUrl || _cloudUrl);
 
 const BASE = _viteApiUrl
-  ? _viteApiUrl.replace(/\/$/, '')          // Railway URL (no trailing slash)
-  : `http://localhost:${API_PORT}/api`;
+  ? _viteApiUrl.replace(/\/$/, '')
+  : _cloudUrl
+    ? _cloudUrl.replace(/\/$/, '')
+    : `http://localhost:${API_PORT}/api`;
 
 async function req(method, path, body) {
   const res = await fetch(`${BASE}${path}`, {

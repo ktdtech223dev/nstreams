@@ -7,6 +7,8 @@ import { useApp } from '../App';
 import api from '../api';
 import UserMenu from './UserMenu';
 
+const IS_ANDROID = typeof window !== 'undefined' && !!window.Capacitor;
+
 const NAV = [
   { id: 'home',       label: 'Home',     icon: Home },
   { id: 'browse',     label: 'Browse',   icon: Compass },
@@ -124,6 +126,120 @@ export default function TopNav({ page, setPage, searchRef }) {
 
   const showDropdown = focused && query.length >= 2;
 
+  if (IS_ANDROID) {
+    return (
+      <header
+        className="safe-left safe-right w-full border-b border-border relative z-50"
+        style={{ background: 'var(--surface-1)', flexShrink: 0 }}
+      >
+        {/* Android: full-width icon+label nav row */}
+        <nav className="flex items-stretch" style={{ height: 60 }}>
+          {NAV.map(n => {
+            const Icon = n.icon;
+            const active = page === n.id;
+            return (
+              <button
+                key={n.id}
+                onClick={() => setPage(n.id)}
+                className={`flex-1 flex flex-col items-center justify-center gap-1 transition
+                  ${active
+                    ? 'bg-accent/20 text-white border-b-2 border-accent'
+                    : 'text-text-dim hover:text-white hover:bg-white/5'}`}
+              >
+                <Icon size={22} strokeWidth={active ? 2.5 : 2} />
+                <span className="text-[10px] font-semibold tracking-wide">{n.label}</span>
+              </button>
+            );
+          })}
+
+          {/* Divider */}
+          <div className="w-px bg-border self-stretch mx-1" />
+
+          {/* User avatar — tap to switch user */}
+          <div className="flex items-center justify-center px-3">
+            <UserMenu onNavigate={setPage} />
+          </div>
+        </nav>
+
+        {/* Android search — collapsible second row */}
+        <div className="px-4 pb-2">
+          <div className={`flex items-center rounded-full transition-all
+            ${focused ? 'bg-surface-3 ring-2 ring-accent' : 'bg-surface-2'}`}
+          >
+            <Search size={16} className="text-muted ml-3.5 shrink-0" />
+            <input
+              ref={inputRef}
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              onFocus={() => setFocused(true)}
+              placeholder="Search titles…"
+              className="bg-transparent flex-1 py-2.5 pl-2.5 pr-3 text-sm text-white placeholder-muted outline-none"
+            />
+            {query && (
+              <button onClick={reset} className="mr-2 p-1 text-muted hover:text-white">
+                <X size={14} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Android dropdown */}
+        {showDropdown && (
+          <div
+            ref={dropdownRef}
+            className="surface-glass absolute left-4 right-4 mt-1 rounded-2xl shadow-lg overflow-y-auto animate-fade z-50"
+            style={{ maxHeight: 400, top: '100%' }}
+          >
+            {watchlistHits.length > 0 && (
+              <div className="p-2 pt-3">
+                <div className="px-3 pb-1.5 text-[10px] tracking-[.15em] font-bold uppercase text-muted">Your List</div>
+                {watchlistHits.map(w => (
+                  <button key={`w-${w.id}`} onClick={() => openWl(w)}
+                    className="w-full px-3 py-3 rounded-lg hover:bg-white/5 flex items-center gap-3 text-left transition"
+                  >
+                    {w.poster_path
+                      ? <img src={w.poster_path} className="w-10 h-14 object-cover rounded shrink-0" alt="" />
+                      : <div className="w-10 h-14 rounded bg-surface-3 shrink-0" />}
+                    <div className="flex-1 min-w-0">
+                      <div className="text-base text-white truncate">{w.title}</div>
+                      <div className="text-xs text-muted">{w.watch_status.replace(/_/g, ' ')}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="p-2 pb-3 border-t border-white/5">
+              <div className="px-3 pb-1.5 pt-2 text-[10px] tracking-[.15em] font-bold uppercase text-muted flex items-center gap-2">
+                <span>From TMDB</span>
+                {loadingTmdb && <span className="text-accent">searching…</span>}
+              </div>
+              {tmdbHits.map(t => {
+                const inList = watchlistTmdbIds.has(t.tmdb_id);
+                return (
+                  <button key={`t-${t.tmdb_id}`} onClick={() => addFromTmdb(t)}
+                    className="w-full px-3 py-3 rounded-lg hover:bg-white/5 flex items-center gap-3 text-left transition"
+                  >
+                    {t.poster_path
+                      ? <img src={t.poster_path} className="w-10 h-14 object-cover rounded shrink-0" alt="" />
+                      : <div className="w-10 h-14 rounded bg-surface-3 shrink-0" />}
+                    <div className="flex-1 min-w-0">
+                      <div className="text-base text-white truncate flex items-center gap-2">
+                        {t.title}
+                        {inList && <span className="text-[10px] text-green bg-green/10 px-1.5 py-0.5 rounded">In list</span>}
+                      </div>
+                      <div className="text-xs text-muted">{t.release_year || '—'} · {t.type === 'movie' ? 'Movie' : 'TV'}</div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </header>
+    );
+  }
+
+  // ── Desktop (Electron) nav ────────────────────────────────────────────────────
   return (
     <>
       <header
@@ -165,7 +281,7 @@ export default function TopNav({ page, setPage, searchRef }) {
           })}
         </nav>
 
-        {/* Flex spacer — also draggable */}
+        {/* Flex spacer */}
         <div className="flex-1 drag-region h-full" />
 
         {/* Search */}
@@ -201,7 +317,6 @@ export default function TopNav({ page, setPage, searchRef }) {
               className="surface-glass absolute right-0 mt-2 w-[480px] rounded-2xl shadow-lg overflow-hidden animate-fade"
               style={{ maxHeight: 560 }}
             >
-              {/* Watchlist section */}
               {watchlistHits.length > 0 && (
                 <div className="p-2 pt-3">
                   <div className="px-3 pb-1.5 text-[10px] tracking-[.15em] font-bold uppercase text-muted">
@@ -229,8 +344,6 @@ export default function TopNav({ page, setPage, searchRef }) {
                   ))}
                 </div>
               )}
-
-              {/* TMDB section */}
               <div className="p-2 pb-3 border-t border-white/5">
                 <div className="px-3 pb-1.5 pt-2 text-[10px] tracking-[.15em] font-bold uppercase text-muted flex items-center gap-2">
                   <span>From TMDB</span>

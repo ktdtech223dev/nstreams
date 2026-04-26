@@ -28,6 +28,7 @@ function startServer() {
     app.use('/api', require('./routes/sync'));
     app.use('/api', require('./routes/sports'));
     app.use('/api', require('./routes/cable'));
+    app.use('/api', require('./routes/migrate'));
 
     app.get('/api/health', (req, res) => res.json({ ok: true, version: process.env.npm_package_version }));
 
