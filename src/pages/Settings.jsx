@@ -163,7 +163,7 @@ export default function Settings() {
         </div>
       </Section>
 
-      <TmdbSection tmdbKey={tmdbKey} setTmdbKey={setTmdbKey} saveKey={saveKey} testTmdb={testTmdb} showToast={showToast} />
+      {!IS_ANDROID && <TmdbSection tmdbKey={tmdbKey} setTmdbKey={setTmdbKey} saveKey={saveKey} testTmdb={testTmdb} showToast={showToast} />}
 
       <Section title={`MyAnimeList — ${activeUser?.display_name}`}>
         <div className="bg-bg3 border border-border rounded-lg p-3 mb-4 text-xs text-muted space-y-1">
@@ -309,14 +309,13 @@ export default function Settings() {
 
       <AboutSection />
 
-      <WatchPartySection />
+      {!IS_ANDROID && <WatchPartySection />}
 
-      <AdblockSection />
+      {!IS_ANDROID && <AdblockSection />}
 
-      <CableTvSection />
+      {!IS_ANDROID && <CableTvSection />}
 
-
-      <LinkedAccountsSection />
+      {!IS_ANDROID && <LinkedAccountsSection />}
 
       <Section title="Sync Status">
         {sync && (

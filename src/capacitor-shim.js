@@ -32,8 +32,10 @@ async function setActiveUser(id) {
   await Preferences.set({ key: 'active_user_id', value: JSON.stringify(id) });
 }
 
-// ─── No-op event registrations (Electron-only features) ─────────────────────
-const noop = () => {};
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+const noop        = () => {};
+const noopAsync   = () => Promise.resolve();
+const noopCleanup = () => noop; // returns a cleanup no-op (mirrors Electron event pattern)
 
 // ─── Install shim ─────────────────────────────────────────────────────────────
 window.electron = {
@@ -50,19 +52,40 @@ window.electron = {
   maximize: noop,
   close: () => App.exitApp(),
 
-  // Player — open streaming URL in full-screen in-app browser
-  // (App.jsx checks window.Capacitor and calls Browser.open directly;
-  //  this stub is here in case anything calls openInBrowser via window.electron)
-  openBrowser: (url) => Browser.open({ url }),
+  // Open URLs — use Capacitor browser on Android
+  openUrl:           (url) => Browser.open({ url }),
+  openBrowser:       (url) => Browser.open({ url }),
+  openUserDataFolder: noop,
 
-  // OAuth — deep links arrive via App.addListener('appUrlOpen')
-  // Registered in App.jsx for Android
+  // OAuth — deep links arrive via App.addListener('appUrlOpen') in App.jsx
   onOAuthCallback: noop,
 
-  // Electron-only notifications — no-op on Android
-  onPopupBlocked:    noop,
-  onViewerEscaped:   noop,
-  onRedirectBlocked: noop,
+  // Electron viewer / popup notifications — no-op on Android
+  onPopupBlocked:    noopCleanup,
+  onViewerEscaped:   noopCleanup,
+  onRedirectBlocked: noopCleanup,
+
+  // Ad blocker — not available on Android (returns disabled status)
+  adblockStatus: () => Promise.resolve({ enabled: false, setting: false }),
+  adblockToggle: () => Promise.resolve({ enabled: false }),
+
+  // In-app viewer (Electron BrowserView) — not available on Android
+  watchInApp:           noopAsync,
+  viewerLinkedDomains:  () => Promise.resolve({}),
+  clearViewerDomain:    () => Promise.resolve({ cleared: 0 }),
+  clearViewerSession:   noopAsync,
+
+  // App info / updates — surfaced from build-time env on Android
+  getAppInfo: () => Promise.resolve({
+    version:      import.meta.env.VITE_APP_VERSION || '—',
+    platform:     'android',
+    arch:         'arm64',
+    apiPort:      null,
+    userDataPath: null,
+  }),
+  onUpdateProgress:  noopCleanup,
+  checkForUpdates:   () => Promise.resolve({ hasUpdate: false }),
+  installUpdate:     noopAsync,
 
   // Watch-party IPC — not available on Android
   party: null,
