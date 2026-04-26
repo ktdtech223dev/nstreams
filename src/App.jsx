@@ -30,6 +30,7 @@ export default function App() {
   const [prevPage, setPrevPage] = useState('home');
   const [activeSessions, setActiveSessions] = useState([]);
   const [toast, setToast] = useState(null);
+  const [androidUpdate, setAndroidUpdate] = useState(null);
   const searchRef = useRef(null);
 
   const activeUser = users.find(u => u.id === activeUserId);
@@ -158,6 +159,14 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  // Android self-update check — runs once on mount, silent on failure
+  useEffect(() => {
+    if (!window.Capacitor) return;
+    import('./update-checker.js').then(({ checkForAndroidUpdate }) => {
+      checkForAndroidUpdate().then(info => { if (info) setAndroidUpdate(info); });
+    });
+  }, []);
+
   // Apply TV edge-padding CSS variable from stored preference (Android only)
   useEffect(() => {
     if (!window.Capacitor) return;
@@ -258,6 +267,35 @@ export default function App() {
       <PartyProvider showToast={showToast}>
         <div className={`flex flex-col h-screen w-screen bg-bg tv-edge ${isAndroid ? 'tv-mode' : ''}`}>
           <TopNav page={page} setPage={setPage} searchRef={searchRef} />
+
+          {/* Android update banner */}
+          {androidUpdate && (
+            <div
+              className="flex items-center justify-between px-4 py-2.5 gap-3"
+              style={{ background: 'var(--accent)', flexShrink: 0 }}
+            >
+              <span className="text-white text-sm font-medium">
+                ⬆ Update available — v{androidUpdate.version}
+              </span>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => import('@capacitor/browser').then(({ Browser }) =>
+                    Browser.open({ url: androidUpdate.downloadUrl })
+                  )}
+                  className="bg-white text-accent text-sm font-bold px-4 py-1 rounded-full"
+                >
+                  Install
+                </button>
+                <button
+                  onClick={() => setAndroidUpdate(null)}
+                  className="text-white/70 text-sm px-2"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="flex flex-1 overflow-hidden">
             <main className={`flex-1 relative ${fullHeight ? 'overflow-hidden' : 'overflow-y-auto'}`}>
               {activeSessions.length > 0 && page !== 'player' && (
