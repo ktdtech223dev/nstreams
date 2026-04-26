@@ -952,33 +952,65 @@ function CableTvSection() {
 function CloudSyncSection({ showToast }) {
   const current = localStorage.getItem('nstreams_cloud_url');
   const [url, setUrl] = useState(current || RAILWAY_URL);
-  const [migrating, setMigrating] = useState(false);
-  const [migrateResult, setMigrateResult] = useState(null);
+  const [status, setStatus] = useState(null); // 'migrating' | 'done' | 'error'
+  const [statusMsg, setStatusMsg] = useState('');
   const isCloud = !!current;
 
-  function enableCloud() {
-    localStorage.setItem('nstreams_cloud_url', url.trim());
-    showToast('Cloud sync enabled — reloading…');
-    setTimeout(() => window.location.reload(), 900);
-  }
-
-  function disableCloud() {
-    localStorage.removeItem('nstreams_cloud_url');
-    showToast('Switched to local — reloading…');
-    setTimeout(() => window.location.reload(), 900);
-  }
-
-  async function migrateToCloud() {
-    if (!isCloud) { showToast('Enable cloud sync first'); return; }
-    setMigrating(true);
-    setMigrateResult(null);
+  // Migrate local → cloud, then flip the URL and reload.
+  // This is the ONLY way to enable cloud sync so no data is ever lost.
+  async function enableCloud() {
+    const cloudUrl = url.trim().replace(/\/$/, '');
+    setStatus('migrating');
+    setStatusMsg('Exporting local data…');
     try {
-      // 1. Export from local Electron server
+      // 1. Pull everything from the local Electron server
       const exportRes = await fetch(`http://localhost:${API_PORT}/api/migrate/export`);
+      if (!exportRes.ok) throw new Error('Could not read local database');
       const exportData = await exportRes.json();
 
-      // 2. Import into Railway
-      const importRes = await fetch(`${url.replace(/\/$/, '')}/migrate/import`, {
+      const counts = {
+        content:  exportData.content?.length  || 0,
+        watchlist: exportData.watchlist?.length || 0,
+        progress: exportData.episodeProgress?.length || 0,
+        activity: exportData.activityFeed?.length || 0,
+      };
+      setStatusMsg(`Pushing ${counts.content} shows, ${counts.watchlist} watchlist entries…`);
+
+      // 2. Push to Railway
+      const importRes = await fetch(`${cloudUrl}/migrate/import`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(exportData),
+      });
+      if (!importRes.ok) throw new Error(`Server returned ${importRes.status}`);
+      const result = await importRes.json();
+      if (!result.ok) throw new Error(result.error || 'Import failed');
+
+      const { imported } = result;
+      setStatusMsg(
+        `✓ Migrated ${imported.content} shows · ${imported.watchlist} watchlist entries · ${imported.episodeProgress} progress records · ${imported.activity} activity items`
+      );
+      setStatus('done');
+
+      // 3. Switch to cloud and reload
+      localStorage.setItem('nstreams_cloud_url', cloudUrl);
+      setTimeout(() => window.location.reload(), 1800);
+    } catch (e) {
+      setStatus('error');
+      setStatusMsg(`Error: ${e.message}`);
+    }
+  }
+
+  // Already on cloud — push any new local data that accumulated (e.g. offline use)
+  async function pushToCloud() {
+    setStatus('migrating');
+    setStatusMsg('Syncing local data to cloud…');
+    try {
+      const exportRes = await fetch(`http://localhost:${API_PORT}/api/migrate/export`);
+      if (!exportRes.ok) throw new Error('Could not read local database');
+      const exportData = await exportRes.json();
+
+      const importRes = await fetch(`${current.replace(/\/$/, '')}/migrate/import`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(exportData),
@@ -987,60 +1019,84 @@ function CloudSyncSection({ showToast }) {
       if (!result.ok) throw new Error(result.error || 'Import failed');
 
       const { imported } = result;
-      setMigrateResult(`Migrated: ${imported.content} shows · ${imported.watchlist} watchlist entries · ${imported.episodeProgress} episode records · ${imported.activity} activity items`);
-      showToast('Migration complete ✓');
+      setStatusMsg(`✓ Pushed ${imported.content} shows · ${imported.watchlist} watchlist · ${imported.episodeProgress} progress records`);
+      setStatus('done');
+      showToast('Local data pushed to cloud ✓');
     } catch (e) {
-      setMigrateResult(`Error: ${e.message}`);
-      showToast('Migration failed: ' + e.message);
-    } finally {
-      setMigrating(false);
+      setStatus('error');
+      setStatusMsg(`Error: ${e.message}`);
     }
   }
 
+  function disableCloud() {
+    localStorage.removeItem('nstreams_cloud_url');
+    showToast('Switched to local — reloading…');
+    setTimeout(() => window.location.reload(), 900);
+  }
+
+  const isBusy = status === 'migrating';
+
   return (
     <Section title="☁ Cloud Sync">
+      {/* Status badge */}
       <div className={`rounded-lg p-3 mb-4 border flex items-center gap-3 ${isCloud ? 'bg-green/10 border-green/30' : 'bg-bg3 border-border'}`}>
         <span className={`w-3 h-3 rounded-full shrink-0 ${isCloud ? 'bg-green' : 'bg-muted'}`} />
         <div>
           <div className={`font-medium text-sm ${isCloud ? 'text-green' : 'text-muted'}`}>
-            {isCloud ? 'Cloud sync active — all devices share one database' : 'Local only — data stays on this machine'}
+            {isCloud
+              ? 'Cloud sync active — PC and projector share one database'
+              : 'Local only — data stays on this machine'}
           </div>
           {isCloud && <div className="text-xs text-muted font-mono truncate mt-0.5">{current}</div>}
         </div>
       </div>
 
       <p className="text-muted text-sm mb-4">
-        Sync your watchlist, crew activity, and watch history across all devices — desktop, Android projector, and future devices. Uses the N Streams Railway backend.
+        {isCloud
+          ? 'Any watch activity on the PC or projector is instantly visible on both. To sync data you added while offline, use "Push Local → Cloud" below.'
+          : 'Enable to sync your full watch history to Railway. Your local data is uploaded first — nothing is lost.'}
       </p>
 
-      <label className="text-xs uppercase text-muted">Cloud API URL</label>
-      <div className="flex gap-2 mt-1 mb-3">
-        <input value={url} onChange={e => setUrl(e.target.value)} placeholder={RAILWAY_URL} className="input flex-1" />
-      </div>
+      {/* Cloud URL input (only relevant when not yet on cloud) */}
+      {!isCloud && (
+        <>
+          <label className="text-xs uppercase text-muted">Cloud API URL</label>
+          <div className="flex gap-2 mt-1 mb-4">
+            <input value={url} onChange={e => setUrl(e.target.value)} placeholder={RAILWAY_URL} className="input flex-1" />
+          </div>
+        </>
+      )}
 
-      <div className="flex flex-wrap gap-2 mb-4">
-        <button onClick={enableCloud} className="btn btn-primary">
-          {isCloud ? '⟳ Update & Reload' : '⚡ Enable Cloud Sync'}
-        </button>
-        {isCloud && (
+      {/* Progress / result message */}
+      {statusMsg && (
+        <div className={`text-sm rounded-lg px-4 py-3 mb-4 ${
+          status === 'error' ? 'bg-red/10 text-red border border-red/30' :
+          status === 'done'  ? 'bg-green/10 text-green border border-green/30' :
+          'bg-accent/10 text-accent border border-accent/30'
+        }`}>
+          {isBusy && <span className="mr-2 inline-block animate-spin">⟳</span>}
+          {statusMsg}
+          {status === 'done' && !isCloud && <span className="ml-2 text-muted text-xs">Reloading…</span>}
+        </div>
+      )}
+
+      {/* Actions */}
+      <div className="flex flex-wrap gap-2">
+        {!isCloud ? (
+          <button onClick={enableCloud} disabled={isBusy} className="btn btn-primary disabled:opacity-50">
+            {isBusy ? 'Uploading…' : '⚡ Upload My Data & Enable Cloud Sync'}
+          </button>
+        ) : (
           <>
-            <button onClick={disableCloud} className="btn btn-ghost">Use Local Only</button>
-            <button onClick={migrateToCloud} disabled={migrating} className="btn btn-ghost disabled:opacity-50">
-              {migrating ? 'Migrating…' : '↑ Push Local Data to Cloud'}
+            <button onClick={pushToCloud} disabled={isBusy} className="btn btn-ghost disabled:opacity-50">
+              {isBusy ? 'Syncing…' : '↑ Push Local → Cloud'}
+            </button>
+            <button onClick={disableCloud} disabled={isBusy} className="btn btn-ghost disabled:opacity-50">
+              Use Local Only
             </button>
           </>
         )}
       </div>
-
-      {migrateResult && (
-        <div className="text-xs text-muted bg-bg3 rounded-lg p-3">{migrateResult}</div>
-      )}
-
-      {!isCloud && (
-        <p className="text-xs text-gold mt-2">
-          ⚠ After enabling, existing local data won't automatically appear on other devices until you click "Push Local Data to Cloud".
-        </p>
-      )}
     </Section>
   );
 }
