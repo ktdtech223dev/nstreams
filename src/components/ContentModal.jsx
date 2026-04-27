@@ -1,11 +1,13 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   X, Play, Users as UsersIcon, Film, MapPin, Info,
-  ExternalLink, Download
+  ExternalLink, Download, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import api from '../api';
 import { useApp } from '../App';
 import EpisodeTracker from './EpisodeTracker';
+
+const IS_ANDROID = typeof window !== 'undefined' && !!window.Capacitor;
 
 const TABS = [
   { id: 'overview', label: 'Overview', icon: Info },
@@ -29,6 +31,53 @@ export default function ContentModal({ contentId, onClose }) {
   const [where, setWhere] = useState(null);
   const [loading, setLoading] = useState(true);
   const [linkOpen, setLinkOpen] = useState(false);
+  const scrollRef = useRef(null);
+
+  // TV remote keyboard navigation for the modal
+  useEffect(() => {
+    if (!IS_ANDROID) return;
+    const tabIds = TABS.map(t => t.id);
+    const STEP = 280;
+    const handler = (e) => {
+      // Always let Escape close
+      if (e.key === 'Escape') { onClose(); e.preventDefault(); return; }
+
+      const focused = document.activeElement;
+      const isTyping = focused && ['INPUT','TEXTAREA','SELECT'].includes(focused.tagName);
+      if (isTyping) return;
+
+      // Left/Right cycle tabs (stop so App.jsx doesn't also handle it)
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault(); e.stopImmediatePropagation();
+        setTab(prev => {
+          const i = tabIds.indexOf(prev);
+          return tabIds[(i - 1 + tabIds.length) % tabIds.length];
+        });
+        return;
+      }
+      if (e.key === 'ArrowRight') {
+        e.preventDefault(); e.stopImmediatePropagation();
+        setTab(prev => {
+          const i = tabIds.indexOf(prev);
+          return tabIds[(i + 1) % tabIds.length];
+        });
+        return;
+      }
+      // Up/Down scroll the modal body (stop so App.jsx doesn't scroll main)
+      if (e.key === 'ArrowDown') {
+        e.preventDefault(); e.stopImmediatePropagation();
+        scrollRef.current?.scrollBy({ top: STEP, behavior: 'smooth' });
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault(); e.stopImmediatePropagation();
+        scrollRef.current?.scrollBy({ top: -STEP, behavior: 'smooth' });
+        return;
+      }
+    };
+    window.addEventListener('keydown', handler, true); // capture so we beat App's handler
+    return () => window.removeEventListener('keydown', handler, true);
+  }, [onClose]);
 
   useEffect(() => {
     setTab('overview');
@@ -142,17 +191,24 @@ export default function ContentModal({ contentId, onClose }) {
     }
   }
 
+  const tabIdx = TABS.findIndex(t => t.id === tab);
+
   return (
     <div
-      className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-8 animate-fade"
-      onClick={onClose}
+      className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center animate-fade"
+      style={IS_ANDROID ? {} : { padding: '2rem' }}
+      onClick={IS_ANDROID ? undefined : onClose}
     >
       <div
         onClick={e => e.stopPropagation()}
-        className="bg-bg2 rounded-2xl w-full max-w-5xl max-h-[90vh] overflow-hidden flex flex-col border border-border"
+        className={`bg-bg2 overflow-hidden flex flex-col border border-border ${
+          IS_ANDROID
+            ? 'w-full h-full'
+            : 'rounded-2xl w-full max-w-5xl max-h-[90vh]'
+        }`}
       >
         {/* Header with backdrop */}
-        <div className="relative h-64 shrink-0">
+        <div className={`relative shrink-0 ${IS_ANDROID ? 'h-44' : 'h-64'}`}>
           {content.backdrop_path && (
             <img src={content.backdrop_path} className="w-full h-full object-cover" alt="" />
           )}
@@ -161,23 +217,25 @@ export default function ContentModal({ contentId, onClose }) {
             style={{ background: 'linear-gradient(180deg, rgba(8,8,16,0.3) 0%, rgba(8,8,16,0.95) 100%)' }}
           />
           <div className="absolute top-4 right-4 flex gap-2">
-            <button
-              onClick={() => { openWatchParty(contentId); }}
-              className="btn btn-primary"
-              title="Start a synced watch party with your crew"
-            >
-              <UsersIcon size={15} /> Watch Together
-            </button>
+            {!IS_ANDROID && (
+              <button
+                onClick={() => { openWatchParty(contentId); }}
+                className="btn btn-primary"
+                title="Start a synced watch party with your crew"
+              >
+                <UsersIcon size={15} /> Watch Together
+              </button>
+            )}
             <button
               onClick={onClose}
-              className="btn btn-icon surface-glass"
+              className={`btn btn-icon surface-glass ${IS_ANDROID ? 'w-12 h-12' : ''}`}
               aria-label="Close"
             >
-              <X size={16} />
+              <X size={IS_ANDROID ? 22 : 16} />
             </button>
           </div>
-          <div className="absolute bottom-4 left-6 right-6 flex gap-5 items-end">
-            {content.poster_path && (
+          <div className="absolute bottom-4 left-6 right-6 flex gap-4 items-end">
+            {content.poster_path && !IS_ANDROID && (
               <img
                 src={content.poster_path}
                 className="w-32 rounded-lg shadow-2xl border border-border"
@@ -185,15 +243,17 @@ export default function ContentModal({ contentId, onClose }) {
               />
             )}
             <div className="flex-1 min-w-0">
-              <h1 className="text-3xl font-display text-white tracking-wide">{content.title}</h1>
-              <div className="flex items-center gap-3 mt-2 text-sm text-muted">
+              <h1 className={`font-display text-white tracking-wide ${IS_ANDROID ? 'text-2xl' : 'text-3xl'}`}>
+                {content.title}
+              </h1>
+              <div className="flex items-center gap-3 mt-1 text-sm text-muted">
                 {content.release_year && <span>{content.release_year}</span>}
                 {content.rating && <span>★ {content.rating.toFixed(1)}</span>}
                 {content.total_episodes && <span>{content.total_episodes} eps</span>}
                 <span className="capitalize">{content.type}</span>
               </div>
-              <div className="flex gap-2 mt-2 flex-wrap">
-                {genres.slice(0, 4).map(g => (
+              <div className="flex gap-2 mt-1 flex-wrap">
+                {genres.slice(0, IS_ANDROID ? 3 : 4).map(g => (
                   <span key={g} className="text-xs bg-bg3 px-2 py-0.5 rounded-full text-muted">
                     {g}
                   </span>
@@ -203,29 +263,66 @@ export default function ContentModal({ contentId, onClose }) {
           </div>
         </div>
 
-        {/* Tabs */}
-        <div className="flex border-b border-border px-6 shrink-0">
-          {TABS.map(t => {
-            const Icon = t.icon;
-            return (
-              <button
-                key={t.id}
-                onClick={() => setTab(t.id)}
-                className={`px-4 py-3 text-sm font-medium border-b-2 transition flex items-center gap-2 ${
-                  tab === t.id
-                    ? 'text-white border-accent'
-                    : 'text-muted border-transparent hover:text-white'
-                }`}
-              >
-                <Icon size={14} />
-                {t.label}
-              </button>
-            );
-          })}
-        </div>
+        {/* Tabs — on Android show prev/next arrows + active tab label for easy remote use */}
+        {IS_ANDROID ? (
+          <div className="flex items-center border-b border-border shrink-0 px-2" style={{ minHeight: 52 }}>
+            <button
+              onClick={() => setTab(TABS[(tabIdx - 1 + TABS.length) % TABS.length].id)}
+              className="btn btn-icon w-11 h-11 shrink-0"
+              aria-label="Previous tab"
+            >
+              <ChevronLeft size={22} />
+            </button>
+            <div className="flex-1 flex justify-center gap-1">
+              {TABS.map((t, i) => {
+                const Icon = t.icon;
+                const isActive = t.id === tab;
+                return (
+                  <button
+                    key={t.id}
+                    onClick={() => setTab(t.id)}
+                    className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold transition ${
+                      isActive ? 'bg-accent text-white' : 'text-muted'
+                    }`}
+                  >
+                    <Icon size={15} />
+                    {isActive && <span>{t.label}</span>}
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              onClick={() => setTab(TABS[(tabIdx + 1) % TABS.length].id)}
+              className="btn btn-icon w-11 h-11 shrink-0"
+              aria-label="Next tab"
+            >
+              <ChevronRight size={22} />
+            </button>
+          </div>
+        ) : (
+          <div className="flex border-b border-border px-6 shrink-0">
+            {TABS.map(t => {
+              const Icon = t.icon;
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => setTab(t.id)}
+                  className={`px-4 py-3 text-sm font-medium border-b-2 transition flex items-center gap-2 ${
+                    tab === t.id
+                      ? 'text-white border-accent'
+                      : 'text-muted border-transparent hover:text-white'
+                  }`}
+                >
+                  <Icon size={14} />
+                  {t.label}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto p-6">
           {tab === 'overview' && (
             <OverviewTab content={content} wl={wl} update={update} cast={cast} />
           )}

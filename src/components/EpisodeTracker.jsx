@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Play, Check, Clock, Calendar, Star, Film,
   ChevronDown, RotateCcw, Zap, Sparkles
@@ -19,6 +19,8 @@ function fmtTime(sec) {
   return h > 0 ? `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}` : `${m}:${String(s).padStart(2,'0')}`;
 }
 
+const IS_ANDROID = typeof window !== 'undefined' && !!window.Capacitor;
+
 export default function EpisodeTracker({ content, wl, update, onAdvance }) {
   const { activeUserId, openPlayer, showToast } = useApp();
   const totalSeasons = content.total_seasons || 1;
@@ -30,6 +32,7 @@ export default function EpisodeTracker({ content, wl, update, onAdvance }) {
   const [progressMap, setProgressMap] = useState({}); // "S:E" → progress row
   const [expandedKey, setExpandedKey] = useState(null); // "S:E" string
   const [sourcesByKey, setSourcesByKey] = useState({}); // "S:E" → scrape results
+  const currentEpRef = useRef(null);
 
   const currentEp = wl?.current_episode || 0;
   const currentSeason = wl?.current_season || 1;
@@ -64,6 +67,14 @@ export default function EpisodeTracker({ content, wl, update, onAdvance }) {
       setProgressMap(m);
     }).catch(() => {});
   }, [content.id, activeUserId]);
+
+  // Auto-scroll to the current episode when season data loads (TV-friendly)
+  useEffect(() => {
+    if (!seasonData || !currentEpRef.current) return;
+    setTimeout(() => {
+      currentEpRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 120);
+  }, [seasonData]);
 
   // Movies: no episode grid needed
   if (content.type === 'movie') {
@@ -232,13 +243,15 @@ export default function EpisodeTracker({ content, wl, update, onAdvance }) {
             <button
               key={s}
               onClick={() => { setSeason(s); setExpandedKey(null); }}
-              className={`px-4 py-2 rounded-full text-sm shrink-0 transition font-semibold ${
+              className={`shrink-0 transition font-semibold rounded-full ${
+                IS_ANDROID ? 'px-5 py-3 text-base' : 'px-4 py-2 text-sm'
+              } ${
                 s === season
                   ? 'bg-accent text-white'
                   : 'bg-surface-2 text-muted hover:bg-surface-3 hover:text-white'
               }`}
             >
-              Season {s}
+              S{s}
             </button>
           ))}
         </div>
@@ -299,6 +312,7 @@ export default function EpisodeTracker({ content, wl, update, onAdvance }) {
                 onToggle={() => toggleExpand(ep)}
                 onPlay={playEpisode}
                 onMarkUpToHere={() => markCompleteThroughHere(ep)}
+                cardRef={isCurrent ? currentEpRef : null}
               />
             );
           })}
@@ -325,7 +339,7 @@ export default function EpisodeTracker({ content, wl, update, onAdvance }) {
   );
 }
 
-function EpisodeCard({ ep, season, isCurrent, isWatched, expanded, prog, sources, onToggle, onPlay, onMarkUpToHere }) {
+function EpisodeCard({ ep, season, isCurrent, isWatched, expanded, prog, sources, onToggle, onPlay, onMarkUpToHere, cardRef }) {
   const last = prog?.last_site_url;
   const lastProv = prog?.last_provider;
 
@@ -342,16 +356,21 @@ function EpisodeCard({ ep, season, isCurrent, isWatched, expanded, prog, sources
   const drmFree = [...embedVariants, ...otherScrapes];
 
   return (
-    <div className={`surface-elevated rounded-xl transition overflow-hidden ${
-      isCurrent ? 'ring-2 ring-accent glow' : 'hover:border-accent/40'
-    }`}>
+    <div
+      ref={cardRef}
+      tabIndex={0}
+      onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } }}
+      className={`surface-elevated rounded-xl transition overflow-hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent ${
+        isCurrent ? 'ring-2 ring-accent glow' : 'hover:border-accent/40'
+      }`}
+    >
       {/* Row */}
       <div
         onClick={onToggle}
         className="group p-3 cursor-pointer flex gap-4"
       >
         {/* Thumbnail */}
-        <div className="relative shrink-0 w-40 h-24 rounded-lg overflow-hidden bg-surface-3">
+        <div className={`relative shrink-0 rounded-lg overflow-hidden bg-surface-3 ${IS_ANDROID ? 'w-28 h-16' : 'w-40 h-24'}`}>
           {ep.still_path ? (
             <img src={ep.still_path} alt={ep.name} className="absolute inset-0 w-full h-full object-cover" loading="lazy" />
           ) : (
@@ -413,15 +432,19 @@ function EpisodeCard({ ep, season, isCurrent, isWatched, expanded, prog, sources
           )}
         </div>
 
-        {/* Hover actions */}
+        {/* Actions */}
         <div className="shrink-0 flex flex-col items-end gap-1.5 self-center">
           {!isCurrent && (
             <button
               onClick={(e) => { e.stopPropagation(); onMarkUpToHere(); }}
-              className="btn btn-ghost text-[10px] px-2 py-1 opacity-0 group-hover:opacity-100 transition whitespace-nowrap"
+              className={`btn btn-ghost whitespace-nowrap ${
+                IS_ANDROID
+                  ? 'text-xs px-3 py-2'
+                  : 'text-[10px] px-2 py-1 opacity-0 group-hover:opacity-100 transition'
+              }`}
               title="Mark this and all previous episodes as watched"
             >
-              <Check size={11} /> Up to here
+              <Check size={IS_ANDROID ? 13 : 11} /> {IS_ANDROID ? '✓' : 'Up to here'}
             </button>
           )}
           <ChevronDown
