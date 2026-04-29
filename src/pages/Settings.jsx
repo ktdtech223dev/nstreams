@@ -961,7 +961,13 @@ function CloudSyncSection({ showToast }) {
     if (!activeUserId) { showToast('No active user selected'); return; }
     setCrewPushing(true);
     try {
-      await api.pushCrewStats(activeUserId);
+      // Always hit the LOCAL Electron server — this reads the local SQLite DB
+      // and pushes to the N Games relay. Cloud URL doesn't have this endpoint.
+      const res = await fetch(
+        `http://localhost:${API_PORT}/api/users/${activeUserId}/push-crew-stats`,
+        { method: 'POST', headers: { 'Content-Type': 'application/json' } }
+      );
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
       showToast('Crew stats pushed ✓');
     } catch (e) {
       showToast('Push failed: ' + e.message);
