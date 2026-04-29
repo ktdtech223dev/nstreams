@@ -1,6 +1,6 @@
 const express = require('express');
 const { getDB } = require('../database');
-const { maybeFireDiscord } = require('../discord');
+const { maybeFireDiscord, pushCrewStats } = require('../discord');
 
 const router = express.Router();
 
@@ -114,6 +114,9 @@ router.put('/watchlist/:id', (req, res) => {
       maybeFireDiscord(db, 'rated', w.user_id, w.content_id, { rating: fields.user_rating });
     }
 
+    // Crew page: push updated stats (status/rating change may affect counts)
+    setImmediate(() => pushCrewStats(db, w.user_id));
+
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -178,6 +181,9 @@ router.post('/watchlist/:id/advance', (req, res) => {
       // Discord: announce series completion via manual advance
       maybeFireDiscord(db, 'completed', w.user_id, w.content_id, { title: w.title });
     }
+
+    // Crew page: push updated stats
+    setImmediate(() => pushCrewStats(db, w.user_id));
 
     res.json({ ok: true, current_episode: newEp, current_season: newSeason, watch_status: newStatus });
   } catch (e) {

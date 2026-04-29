@@ -1,5 +1,6 @@
 const express = require('express');
 const { getDB } = require('../database');
+const { pushCrewStats } = require('../discord');
 
 const router = express.Router();
 

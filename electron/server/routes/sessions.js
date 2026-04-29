@@ -1,6 +1,6 @@
 const express = require('express');
 const { getDB } = require('../database');
-const { maybeFireDiscord } = require('../discord');
+const { maybeFireDiscord, pushCrewStats } = require('../discord');
 
 const router = express.Router();
 
@@ -62,6 +62,8 @@ router.post('/sessions/start', (req, res) => {
 
     // Discord: announce first-ever watch of this content
     maybeFireDiscord(db, 'started_watching', user_id, content_id, {});
+    // Crew page: push updated stats snapshot so all devices see latest counts
+    setImmediate(() => pushCrewStats(db, user_id));
 
     res.json({
       session_id: info.lastInsertRowid,
@@ -140,6 +142,9 @@ router.post('/sessions/:id/end', (req, res) => {
             title: w.title,
           });
         }
+
+        // Crew page: push updated stats (episode advance may change watching/completed counts)
+        setImmediate(() => pushCrewStats(db, session.user_id));
 
         return res.json({ ok: true, advanced: true, completed, current_episode: newEp });
       }
