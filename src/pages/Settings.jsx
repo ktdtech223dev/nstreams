@@ -949,11 +949,26 @@ function CableTvSection() {
 
 // ── Cloud Sync (Electron only) ────────────────────────────────────────────────
 function CloudSyncSection({ showToast }) {
+  const { activeUserId } = useApp();
   const current = localStorage.getItem('nstreams_cloud_url');
   const [url, setUrl] = useState(current || RAILWAY_URL);
   const [status, setStatus] = useState(null); // 'migrating' | 'done' | 'error'
   const [statusMsg, setStatusMsg] = useState('');
+  const [crewPushing, setCrewPushing] = useState(false);
   const isCloud = !!current;
+
+  async function pushCrewStatsNow() {
+    if (!activeUserId) { showToast('No active user selected'); return; }
+    setCrewPushing(true);
+    try {
+      await api.pushCrewStats(activeUserId);
+      showToast('Crew stats pushed ✓');
+    } catch (e) {
+      showToast('Push failed: ' + e.message);
+    } finally {
+      setCrewPushing(false);
+    }
+  }
 
   // Migrate local → cloud, then flip the URL and reload.
   // This is the ONLY way to enable cloud sync so no data is ever lost.
@@ -1095,6 +1110,23 @@ function CloudSyncSection({ showToast }) {
             </button>
           </>
         )}
+      </div>
+
+      {/* Crew stats relay — always visible, independent of cloud sync */}
+      <div className="mt-5 pt-5 border-t border-border">
+        <div className="text-sm text-white font-medium mb-1">Crew Stats Relay</div>
+        <p className="text-xs text-muted mb-3">
+          Pushes your watching/completed/plan counts to the N Games relay so other crew
+          members see your stats on their Crew page. This happens automatically on every
+          activity — use the button if things look out of sync.
+        </p>
+        <button
+          onClick={pushCrewStatsNow}
+          disabled={crewPushing}
+          className="btn btn-ghost text-sm disabled:opacity-50"
+        >
+          {crewPushing ? 'Pushing…' : '📡 Push My Stats Now'}
+        </button>
       </div>
     </Section>
   );

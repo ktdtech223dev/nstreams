@@ -143,6 +143,7 @@ function maybeFireDiscord(db, eventType, userId, contentId, meta = {}) {
         content_title: contentTitle,
         content_type:  contentType,
         poster_path:   posterPath,
+        release_year:  content.release_year || null,
       });
     }
 

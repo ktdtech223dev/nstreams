@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import api from '../api';
 import { useApp } from '../App';
 
-export default function CrewCard({ user }) {
+export default function CrewCard({ user, onViewProfile }) {
   const { activeUserId, openContent } = useApp();
   const [detail, setDetail] = useState(null);
   const [sync, setSync] = useState(null);
@@ -21,9 +21,10 @@ export default function CrewCard({ user }) {
 
   return (
     <div
-      className={`surface rounded-2xl p-6 transition ${
+      className={`surface rounded-2xl p-6 transition cursor-pointer ${
         isActive ? 'ring-2 ring-accent glow' : 'hover:border-surface-4'
       }`}
+      onClick={() => onViewProfile && onViewProfile(user)}
     >
       <div className="flex items-start gap-4">
         <div
@@ -67,7 +68,7 @@ export default function CrewCard({ user }) {
             {detail.thisWeek.map(w => (
               <div
                 key={w.id}
-                onClick={() => openContent(w.content_id)}
+                onClick={e => { e.stopPropagation(); openContent(w.content_id); }}
                 className="relative w-14 cursor-pointer"
               >
                 {w.poster_path ? (
@@ -93,7 +94,7 @@ export default function CrewCard({ user }) {
             {detail.recentCompleted.map(w => (
               <div
                 key={w.id}
-                onClick={() => openContent(w.content_id)}
+                onClick={e => { e.stopPropagation(); openContent(w.content_id); }}
                 className="text-sm text-white truncate cursor-pointer hover:text-accent transition"
               >
                 {w.title} {w.user_rating && <span className="text-gold">★ {w.user_rating}</span>}

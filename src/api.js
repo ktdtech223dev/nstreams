@@ -98,7 +98,8 @@ export const api = {
   anilistConnect: (userId) => req('POST', '/sync/anilist/connect', { userId }),
   anilistSync: (userId) => req('POST', `/sync/anilist/${userId}`),
   getSports: () => req('GET', '/sports'),
-  clearSportsCache: () => req('POST', '/sports/clear-cache', {})
+  clearSportsCache: () => req('POST', '/sports/clear-cache', {}),
+  pushCrewStats: (userId) => req('POST', `/users/${userId}/push-crew-stats`)
 };
 
 export default api;

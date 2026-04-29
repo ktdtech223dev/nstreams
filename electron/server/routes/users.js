@@ -2,6 +2,7 @@ const express  = require('express');
 const https    = require('https');
 const http     = require('http');
 const { getDB } = require('../database');
+const { pushCrewStats } = require('../discord');
 
 const router = express.Router();
 
@@ -159,6 +160,19 @@ router.get('/users/:id', async (req, res) => {
       : localThisWeek;
 
     res.json({ ...user, stats, recentCompleted, thisWeek });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── POST /api/users/:id/push-crew-stats — manual relay push ───────────────────
+router.post('/users/:id/push-crew-stats', (req, res) => {
+  try {
+    const db   = getDB();
+    const user = db.prepare('SELECT id FROM users WHERE id = ?').get(req.params.id);
+    if (!user) return res.status(404).json({ error: 'Not found' });
+    pushCrewStats(db, user.id);
+    res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

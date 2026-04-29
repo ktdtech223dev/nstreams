@@ -1,10 +1,12 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useApp } from '../App';
 import CrewCard from '../components/CrewCard';
+import CrewProfileModal from '../components/CrewProfileModal';
 import ActivityFeed from '../components/ActivityFeed';
 
 export default function Crew() {
   const { users } = useApp();
+  const [profileUser, setProfileUser] = useState(null);
 
   return (
     <div>
@@ -14,7 +16,13 @@ export default function Crew() {
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-5 mb-12">
-        {users.map(u => <CrewCard key={u.id} user={u} />)}
+        {users.map(u => (
+          <CrewCard
+            key={u.id}
+            user={u}
+            onViewProfile={setProfileUser}
+          />
+        ))}
       </div>
 
       <section>
@@ -23,6 +31,13 @@ export default function Crew() {
           <ActivityFeed />
         </div>
       </section>
+
+      {profileUser && (
+        <CrewProfileModal
+          user={profileUser}
+          onClose={() => setProfileUser(null)}
+        />
+      )}
     </div>
   );
 }

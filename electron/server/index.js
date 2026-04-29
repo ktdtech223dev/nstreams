@@ -3,6 +3,7 @@ const cors = require('cors');
 const { getDB } = require('./database');
 const mal = require('./mal');
 const anilist = require('./anilist');
+const { pushCrewStats } = require('./discord');
 
 const PREFERRED_PORT = 57832;
 const PORT_RANGE = 20;
@@ -52,6 +53,18 @@ function startServer() {
       });
     };
     tryListen();
+
+    // Push crew stats for all users on startup so Crew page is fresh immediately
+    setImmediate(() => {
+      try {
+        const db = getDB();
+        const users = db.prepare('SELECT id FROM users').all();
+        for (const u of users) pushCrewStats(db, u.id);
+        console.log(`[crew-sync] pushed stats for ${users.length} user(s)`);
+      } catch (e) {
+        console.log('[crew-sync] startup push error:', e.message);
+      }
+    });
 
     // Auto-sync every 6 hours
     setInterval(async () => {

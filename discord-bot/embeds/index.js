@@ -180,6 +180,67 @@ function challengeCompleteEmbed({ payload, crew }) {
   };
 }
 
+// ── N Streams /watchlist command ─────────────────────────────────────────────
+function nstreamsWatchlistEmbed({ user, rows, statusFilter }) {
+  const watching      = rows.filter(r => r.watch_status === 'watching');
+  const completed     = rows.filter(r => r.watch_status === 'completed');
+  const planToWatch   = rows.filter(r => r.watch_status === 'plan_to_watch');
+
+  function fmt(list, max = 8) {
+    if (!list.length) return '_Nothing here yet_';
+    return list.slice(0, max)
+      .map(r => {
+        let line = `• ${r.title}`;
+        if (r.watch_status === 'watching' && r.current_episode > 0) {
+          line += ` *(S${r.current_season || 1} E${r.current_episode})*`;
+        }
+        if (r.user_rating) line += ` ★ ${r.user_rating}`;
+        return line;
+      })
+      .join('\n') + (list.length > max ? `\n_…and ${list.length - max} more_` : '');
+  }
+
+  const fields = [];
+  if (!statusFilter || statusFilter === 'watching') {
+    fields.push({ name: `📺 Watching (${watching.length})`, value: fmt(watching), inline: false });
+  }
+  if (!statusFilter || statusFilter === 'completed') {
+    fields.push({ name: `✅ Completed (${completed.length})`, value: fmt(completed), inline: false });
+  }
+  if (!statusFilter || statusFilter === 'plan_to_watch') {
+    fields.push({ name: `🗒 Plan to Watch (${planToWatch.length})`, value: fmt(planToWatch), inline: false });
+  }
+
+  return {
+    color:  COLORS.nstreams,
+    author: { name: `${user.display_name || user.username}'s Watchlist` },
+    fields,
+    footer: { text: 'N Streams' },
+    timestamp: ts(),
+  };
+}
+
+// ── N Streams /top5 command ──────────────────────────────────────────────────
+function nstreamsTop5Embed({ user, rows }) {
+  const rated = rows
+    .filter(r => r.user_rating > 0)
+    .sort((a, b) => b.user_rating - a.user_rating)
+    .slice(0, 5);
+
+  const MEDALS = ['🥇', '🥈', '🥉', '4️⃣', '5️⃣'];
+  const desc = rated.length
+    ? rated.map((r, i) => `${MEDALS[i]} **${r.title}** — ★ ${r.user_rating}/10`).join('\n')
+    : '_No ratings yet._';
+
+  return {
+    color:       COLORS.nstreams,
+    title:       `⭐ ${user.display_name || user.username}'s Top 5`,
+    description: desc,
+    footer:      { text: 'N Streams' },
+    timestamp:   ts(),
+  };
+}
+
 module.exports = {
   wallPostEmbed,
   achievementEmbed,
@@ -190,4 +251,6 @@ module.exports = {
   releaseEmbed,
   titleUnlockedEmbed,
   challengeCompleteEmbed,
+  nstreamsWatchlistEmbed,
+  nstreamsTop5Embed,
 };
