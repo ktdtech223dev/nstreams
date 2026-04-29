@@ -7,6 +7,8 @@ module.exports = {
     const post = payload.post || payload;
     if (!post?.content) return;
     const embed = embeds.wallPostEmbed({ post, crew });
-    await discord.post(embed);
+    // Pass @everyone through as the message content so Discord actually pings
+    const everyoneContent = post.content.includes('@everyone') ? '@everyone' : undefined;
+    await discord.post(embed, null, everyoneContent);
   },
 };

@@ -45,13 +45,16 @@ async function registerCommands(commands) {
 }
 
 // ── Post an embed — returns the sent Message (or null on failure) ─────────────
-async function post(embed, channelId) {
+// content: optional plain-text string prepended before the embed (use '@everyone' to ping)
+async function post(embed, channelId, content) {
   const id = channelId || botChannelId;
   if (!id) return null;
   try {
     const channel = await client.channels.fetch(id);
     if (!channel?.isTextBased()) return null;
-    return await channel.send({ embeds: [embed] });
+    const payload = { embeds: [embed] };
+    if (content) payload.content = content;
+    return await channel.send(payload);
   } catch (e) {
     console.warn('[discord] post failed:', e.message);
     return null;

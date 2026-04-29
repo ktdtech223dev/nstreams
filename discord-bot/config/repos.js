@@ -52,4 +52,19 @@ module.exports = [
     color: 0x9d5cff,
     repo:  'ktdtech223dev/nstreams',
   },
+  {
+    id:    'interrogating-blacks',
+    name:  'Interrogating Blacks',
+    emoji: '🎙️',
+    color: 0xffd700,
+    repo:  'ktdtech223dev/InterrogatingBlacks',
+  },
+  {
+    id:         'n-games-launcher',
+    name:       'N Games Launcher',
+    emoji:      '🚀',
+    color:      0x80e060,
+    repo:       'ktdtech223dev/n-games-launcher',
+    isLauncher: true, // launcher updates: no @everyone, different embed title
+  },
 ];

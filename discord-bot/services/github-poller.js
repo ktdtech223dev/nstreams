@@ -67,8 +67,10 @@ async function pollOnce(seenTags) {
     const htmlUrl     = release.html_url;
 
     const embed = embeds.releaseEmbed({ game, version, changelog, downloadUrl, htmlUrl, isNew });
-    await discord.post(embed);
-    console.log(`[poller] ${isNew ? 'new game' : 'update'} — ${game.name} ${tag}`);
+    // @everyone for brand-new games only (not launcher updates — those are silent pings)
+    const pingContent = (isNew && !game.isLauncher) ? '@everyone' : undefined;
+    await discord.post(embed, null, pingContent);
+    console.log(`[poller] ${isNew ? 'NEW GAME 🎮' : 'update'} — ${game.name} ${tag}${pingContent ? ' (@everyone)' : ''}`);
   }));
 
   if (changed) saveTags(seenTags);
