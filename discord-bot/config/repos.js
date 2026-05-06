@@ -11,13 +11,6 @@ module.exports = [
     repo:  'ktdtech223dev/chaos-holdem-client',
   },
   {
-    id:    'nkart',
-    name:  'N Kart',
-    emoji: '🏎️',
-    color: 0xf0c040,
-    repo:  'ktdtech223dev/nkart',
-  },
-  {
     id:    'blacks-dungeon',
     name:  'Shape of Blacks',
     emoji: '⚔️',
@@ -30,13 +23,6 @@ module.exports = [
     emoji: '🎁',
     color: 0x40c0e0,
     repo:  'ktdtech223dev/csgocasesim',
-  },
-  {
-    id:    'project-x',
-    name:  'N Arena',
-    emoji: '🏟️',
-    color: 0x80e060,
-    repo:  'ktdtech223dev/nigarena',
   },
   {
     id:    'cuunsurf',
