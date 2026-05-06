@@ -46,6 +46,13 @@ module.exports = [
     repo:  'ktdtech223dev/InterrogatingBlacks',
   },
   {
+    id:    'bbg',
+    name:  'BBG (Black Bored Games)',
+    emoji: '🎲',
+    color: 0xc17f24,
+    repo:  'ktdtech223dev/bbg-black-board-games',
+  },
+  {
     id:         'n-games-launcher',
     name:       'N Games Launcher',
     emoji:      '🚀',
