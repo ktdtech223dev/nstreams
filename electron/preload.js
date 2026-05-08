@@ -52,6 +52,8 @@ contextBridge.exposeInMainWorld('electron', {
   onViewerClosed: (cb) => ipcRenderer.on('viewer-closed', (_, data) => cb(data)),
   onPopupBlocked: (cb) => ipcRenderer.on('viewer-popup-blocked', (_, data) => cb(data)),
   onLoadFailed: (cb) => ipcRenderer.on('viewer-load-failed', (_, data) => cb(data)),
+  dohStatus: () => ipcRenderer.invoke('doh-status'),
+  dohToggle: (on) => ipcRenderer.invoke('doh-toggle', on),
   onViewerEscaped: (cb) => ipcRenderer.on('viewer-escaped', (_, data) => cb(data)),
   adblockStatus: () => ipcRenderer.invoke('adblock-status'),
   adblockToggle: (on) => ipcRenderer.invoke('adblock-toggle', on),

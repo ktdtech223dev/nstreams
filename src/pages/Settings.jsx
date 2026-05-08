@@ -311,6 +311,8 @@ export default function Settings() {
 
       {!IS_ANDROID && <WatchPartySection />}
 
+      {!IS_ANDROID && <DnsSection />}
+
       {!IS_ANDROID && <AdblockSection />}
 
       {!IS_ANDROID && <CableTvSection />}
@@ -722,6 +724,64 @@ function _UnusedScraperSection() {
   );
 }
 
+
+function DnsSection() {
+  const { showToast } = useApp();
+  const [status, setStatus] = useState(null);
+
+  useEffect(() => {
+    window.electron?.dohStatus?.().then(setStatus);
+  }, []);
+
+  async function toggle() {
+    const r = await window.electron.dohToggle(!status?.enabled);
+    setStatus({ enabled: r.enabled });
+    showToast(r.enabled
+      ? '🔒 DoH enabled — restart N Streams to apply'
+      : '⚠ DoH disabled — restart to apply'
+    );
+  }
+
+  return (
+    <Section title="Secure DNS (DoH)">
+      <p className="text-muted text-sm mb-4">
+        N Streams routes its DNS lookups through Cloudflare + Google over HTTPS so
+        streaming sites still resolve when your local DNS (ISP, Pi-hole, NextDNS,
+        family DNS like 1.1.1.3, school/work filtering) is blocking video CDN
+        domains. This is app-only — your other browsers and system DNS are untouched.
+      </p>
+      <div className="flex items-center justify-between bg-bg3 border border-border rounded-lg p-3">
+        <div>
+          <div className="text-white font-medium">Use DNS-over-HTTPS (DoH)</div>
+          <div className="text-xs text-muted">
+            {status?.enabled
+              ? '✓ Active · queries go to 1.1.1.1 / dns.google over HTTPS'
+              : status?.enabled === false
+              ? 'Disabled · using system DNS'
+              : 'Loading…'}
+          </div>
+        </div>
+        <button
+          onClick={toggle}
+          className={`relative w-12 h-6 rounded-full transition ${
+            status?.enabled ? 'bg-accent' : 'bg-bg4'
+          }`}
+        >
+          <span
+            className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition-all ${
+              status?.enabled ? 'left-6' : 'left-0.5'
+            }`}
+          />
+        </button>
+      </div>
+      <div className="text-xs text-muted mt-3">
+        Toggling requires an N Streams restart since DNS is process-wide.
+        Disable only if you're on a captive portal or corporate network that
+        requires its own DNS.
+      </div>
+    </Section>
+  );
+}
 
 function AdblockSection() {
   const { showToast } = useApp();

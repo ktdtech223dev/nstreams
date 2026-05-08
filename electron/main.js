@@ -898,6 +898,30 @@ party.registerIpc({
 });
 
 app.whenReady().then(async () => {
+  // DNS-over-HTTPS (DoH) so streaming sites still resolve when the
+  // user's local DNS (ISP, Pi-hole, NextDNS, family-DNS like 1.1.1.3,
+  // OpenDNS FamilyShield, school/corporate filtering) is blocking
+  // video CDN domains. Encrypts queries to Cloudflare/Google and
+  // bypasses local DNS entirely. App-only — doesn't affect the user's
+  // other browsers / system DNS.
+  const dohEnabled = store.get('doh_enabled', true);
+  if (dohEnabled) {
+    try {
+      app.configureHostResolver({
+        enableBuiltInResolver: true,
+        secureDnsMode: 'secure',
+        secureDnsServers: [
+          'https://1.1.1.1/dns-query',
+          'https://1.0.0.1/dns-query',
+          'https://dns.google/dns-query'
+        ]
+      });
+      console.log('[dns] DoH enabled — using Cloudflare + Google over HTTPS');
+    } catch (e) {
+      console.warn('[dns] DoH config failed (Electron may be too old):', e.message);
+    }
+  }
+
   // Initialize ad/tracker blocker — applied only to the viewer partition
   // (the main window doesn't need it, it serves our own UI). Per-window
   // URL is inspected at watchInApp time to auto-disable for premium
@@ -911,6 +935,16 @@ app.whenReady().then(async () => {
 
   await createWindow();
   party.setWindows(mainWindow, null);
+});
+
+// IPC for the Settings toggle. Takes effect on next app restart since
+// configureHostResolver is process-wide.
+ipcMain.handle('doh-status', () => ({
+  enabled: store.get('doh_enabled', true)
+}));
+ipcMain.handle('doh-toggle', (_, on) => {
+  store.set('doh_enabled', !!on);
+  return { enabled: !!on, requiresRestart: true };
 });
 
 app.on('window-all-closed', () => {
