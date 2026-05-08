@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { ExternalLink, X, Play, RotateCcw, Users, RefreshCw } from 'lucide-react';
+import { ExternalLink, X, Play, RotateCcw, Users, RefreshCw, Wand2 } from 'lucide-react';
 import api from '../api';
 import { useApp } from '../App';
 
@@ -144,6 +144,16 @@ export default function Player({ session, onClose }) {
           )}
         </div>
         <div className="flex gap-1.5 shrink-0 items-center">
+          <button
+            onClick={async () => {
+              await window.electron?.player?.resetAndRetry?.();
+              showToast('Cleared cookies + retrying…');
+            }}
+            className="btn btn-icon btn-ghost"
+            title="Reset & retry — clears stored cookies/cache for this site and reloads. Try this when playback hangs forever."
+          >
+            <Wand2 size={15} />
+          </button>
           <button
             onClick={() => window.electron?.player?.reload?.()}
             className="btn btn-icon btn-ghost"

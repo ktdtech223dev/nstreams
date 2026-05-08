@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld('electron', {
     open: (opts) => ipcRenderer.invoke('player:open', opts),
     close: () => ipcRenderer.invoke('player:close'),
     reload: () => ipcRenderer.invoke('player:reload'),
+    resetAndRetry: () => ipcRenderer.invoke('player:reset-and-retry'),
     setBounds: (bounds) => ipcRenderer.invoke('player:set-bounds', bounds),
     getState: () => ipcRenderer.invoke('player:get-state'),
     onSourceBlocked: (cb) => {
@@ -50,6 +51,7 @@ contextBridge.exposeInMainWorld('electron', {
   viewerLinkedDomains: (domains) => ipcRenderer.invoke('viewer-linked-domains', domains),
   onViewerClosed: (cb) => ipcRenderer.on('viewer-closed', (_, data) => cb(data)),
   onPopupBlocked: (cb) => ipcRenderer.on('viewer-popup-blocked', (_, data) => cb(data)),
+  onLoadFailed: (cb) => ipcRenderer.on('viewer-load-failed', (_, data) => cb(data)),
   onViewerEscaped: (cb) => ipcRenderer.on('viewer-escaped', (_, data) => cb(data)),
   adblockStatus: () => ipcRenderer.invoke('adblock-status'),
   adblockToggle: (on) => ipcRenderer.invoke('adblock-toggle', on),

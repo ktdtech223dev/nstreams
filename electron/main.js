@@ -156,7 +156,7 @@ ipcMain.handle('watch-in-app', async (_, { url, title, sessionId, partyId }) => 
   try {
     viewerSession.setUserAgent(
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
-      '(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
+      '(KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36'
     );
   } catch (_) {}
 
@@ -449,7 +449,7 @@ ipcMain.handle('player:open', async (_, opts) => {
     const partition = 'persist:nstreams-viewer';
     try {
       session.fromPartition(partition).setUserAgent(
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36'
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36'
       );
     } catch {}
 
@@ -549,6 +549,52 @@ ipcMain.handle('player:open', async (_, opts) => {
     playerView.webContents.on('will-navigate', guard);
     playerView.webContents.on('will-redirect', guard);
 
+    // Surface load failures so the user (and us) know why the spinner
+    // is stuck. Top-frame and sub-frame failures both reported.
+    function describeError(code) {
+      const codes = {
+        '-2':   'FAILED',
+        '-3':   'ABORTED',
+        '-7':   'TIMED_OUT',
+        '-21':  'NETWORK_CHANGED',
+        '-101': 'CONNECTION_RESET',
+        '-105': 'NAME_NOT_RESOLVED (DNS)',
+        '-106': 'INTERNET_DISCONNECTED',
+        '-118': 'CONNECTION_TIMED_OUT',
+        '-130': 'PROXY_CONNECTION_FAILED',
+        '-137': 'NAME_RESOLUTION_FAILED',
+        '-200': 'CERT_COMMON_NAME_INVALID',
+        '-201': 'CERT_DATE_INVALID',
+        '-202': 'CERT_AUTHORITY_INVALID',
+        '-300': 'INVALID_URL',
+        '-310': 'TOO_MANY_REDIRECTS',
+        '-501': 'INSECURE_RESPONSE',
+        '-501': 'BLOCKED_BY_RESPONSE'
+      };
+      return codes[String(code)] || `code ${code}`;
+    }
+    const reportFail = (event, code, desc, failedUrl, isMain) => {
+      // -3 ABORTED is mostly user-initiated (close, navigate away). Skip noise.
+      if (code === -3) return;
+      try {
+        const host = new URL(failedUrl).hostname;
+        console.log(`[player] load failed (${isMain ? 'main' : 'sub'}): ${host} → ${describeError(code)}`);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('viewer-load-failed', {
+            host, url: failedUrl, code,
+            error: describeError(code),
+            mainFrame: !!isMain
+          });
+        }
+      } catch {}
+    };
+    playerView.webContents.on('did-fail-load', (e, code, desc, failedUrl, isMain) => {
+      reportFail(e, code, desc, failedUrl, isMain);
+    });
+    playerView.webContents.on('did-fail-provisional-load', (e, code, desc, failedUrl, isMain) => {
+      reportFail(e, code, desc, failedUrl, isMain);
+    });
+
     // Position + duration heartbeat from viewer-preload
     ipcMain.removeAllListeners('player:heartbeat');
     ipcMain.on('player:heartbeat', (ev, payload) => {
@@ -612,6 +658,37 @@ ipcMain.handle('player:get-state', () => ({
 ipcMain.handle('player:reload', () => {
   if (!playerView || !playerState.url) return { ok: false };
   try { playerView.webContents.loadURL(playerState.url); } catch {}
+  return { ok: true };
+});
+
+// Reset & Retry — wipes cookies + cache + service workers for the
+// current viewer host, then reloads the URL. Use when playback is
+// stuck behind a failed Cloudflare challenge or stale auth cookies.
+ipcMain.handle('player:reset-and-retry', async () => {
+  if (!playerView || !playerState.url) return { ok: false };
+  try {
+    const ses = session.fromPartition('persist:nstreams-viewer');
+    let host = '';
+    try { host = new URL(playerState.url).hostname.replace(/^www\./, ''); } catch {}
+    // Clear cookies for this host's whole eTLD+1
+    if (host) {
+      const root = host.split('.').slice(-2).join('.');
+      const cookies = await ses.cookies.get({ domain: root });
+      for (const c of cookies) {
+        const u = `http${c.secure ? 's' : ''}://${c.domain.replace(/^\./, '')}${c.path || '/'}`;
+        try { await ses.cookies.remove(u, c.name); } catch {}
+      }
+    }
+    // Clear cache + service workers (safest) for the whole partition
+    await ses.clearStorageData({
+      storages: ['cookies', 'cachestorage', 'serviceworkers', 'shadercache']
+    });
+    await ses.clearCache();
+    // Reload
+    playerView.webContents.loadURL(playerState.url);
+  } catch (e) {
+    console.warn('[player] reset failed:', e.message);
+  }
   return { ok: true };
 });
 

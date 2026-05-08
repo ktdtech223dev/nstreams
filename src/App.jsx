@@ -69,6 +69,14 @@ export default function App() {
     window.electron?.onRedirectBlocked?.((d) => {
       showToast(`🛡 Blocked ad redirect → ${d.host || 'unknown'}`);
     });
+    window.electron?.onLoadFailed?.((d) => {
+      // Only toast for top-frame failures or DNS/network ones — sub-frame
+      // tracker pixels failing is normal and would spam.
+      const networkLevel = ['NAME_NOT_RESOLVED (DNS)', 'CONNECTION_TIMED_OUT', 'TIMED_OUT', 'CONNECTION_RESET', 'NAME_RESOLUTION_FAILED', 'INTERNET_DISCONNECTED', 'PROXY_CONNECTION_FAILED'];
+      if (d.mainFrame || networkLevel.includes(d.error)) {
+        showToast(`❌ ${d.host}: ${d.error}`);
+      }
+    });
   }, []);
 
   // Watch party: host loaded a new video — open it for all members.
