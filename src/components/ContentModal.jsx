@@ -33,9 +33,20 @@ export default function ContentModal({ contentId, onClose }) {
   const [linkOpen, setLinkOpen] = useState(false);
   const scrollRef = useRef(null);
 
-  // TV remote keyboard navigation for the modal
+  // Lock the page underneath from scrolling while the modal is open.
+  // Without this, arrow keys / wheel / D-pad input fall through to the
+  // main page and scroll the row behind the popup.
   useEffect(() => {
-    if (!IS_ANDROID) return;
+    const main = document.querySelector('main');
+    const prev = main?.style.overflow;
+    if (main) main.style.overflow = 'hidden';
+    return () => { if (main) main.style.overflow = prev || ''; };
+  }, []);
+
+  // TV remote / arrow-key navigation for the modal. Installs unconditionally —
+  // people with HDMI keyboards or D-pad remotes hit this on the desktop build
+  // too, not just Android, so the IS_ANDROID gate is wrong here.
+  useEffect(() => {
     const tabIds = TABS.map(t => t.id);
     const STEP = 280;
     const handler = (e) => {
