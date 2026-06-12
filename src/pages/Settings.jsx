@@ -3,7 +3,7 @@ import api, { API_PORT } from '../api';
 import { useApp } from '../App';
 import { useParty, DEFAULT_RELAY_URL } from '../party/PartyContext';
 
-const IS_ANDROID = typeof window !== 'undefined' && !!window.Capacitor;
+const IS_ANDROID = import.meta.env.VITE_PLATFORM === 'android' || (typeof window !== 'undefined' && !!window.Capacitor);
 const RAILWAY_URL = 'https://nstreams-api-production.up.railway.app/api';
 
 export default function Settings() {

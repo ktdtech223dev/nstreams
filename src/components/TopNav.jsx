@@ -7,7 +7,7 @@ import { useApp } from '../App';
 import api from '../api';
 import UserMenu from './UserMenu';
 
-const IS_ANDROID = typeof window !== 'undefined' && !!window.Capacitor;
+const IS_ANDROID = import.meta.env.VITE_PLATFORM === 'android' || (typeof window !== 'undefined' && !!window.Capacitor);
 
 const NAV = [
   { id: 'home',       label: 'Home',     icon: Home },

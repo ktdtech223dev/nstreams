@@ -7,7 +7,7 @@ import api from '../api';
 import { useApp } from '../App';
 import EpisodeTracker from './EpisodeTracker';
 
-const IS_ANDROID = typeof window !== 'undefined' && !!window.Capacitor;
+const IS_ANDROID = import.meta.env.VITE_PLATFORM === 'android' || (typeof window !== 'undefined' && !!window.Capacitor);
 
 const TABS = [
   { id: 'overview', label: 'Overview', icon: Info },

@@ -19,7 +19,7 @@ function fmtTime(sec) {
   return h > 0 ? `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}` : `${m}:${String(s).padStart(2,'0')}`;
 }
 
-const IS_ANDROID = typeof window !== 'undefined' && !!window.Capacitor;
+const IS_ANDROID = import.meta.env.VITE_PLATFORM === 'android' || (typeof window !== 'undefined' && !!window.Capacitor);
 
 export default function EpisodeTracker({ content, wl, update, onAdvance }) {
   const { activeUserId, openPlayer, showToast } = useApp();
