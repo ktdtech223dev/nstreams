@@ -1,0 +1,89 @@
+name: Publish Kodi Repository (auto-updates)
+
+# Rebuilds the `repo` branch on every tag push. The branch is what
+# Kodi's repository.nstreams addon polls for new versions of
+# plugin.video.nstreams — so users who installed the repository
+# addon get auto-update prompts within 24h of every tagged release.
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Read addon versions
+        id: versions
+        run: |
+          PLUGIN_VERSION=$(grep -oE 'version="[0-9.]+"' kodi-addon/addon.xml | head -1 | cut -d'"' -f2)
+          REPO_VERSION=$(grep -oE 'version="[0-9.]+"' kodi-repo/repository.nstreams/addon.xml | head -1 | cut -d'"' -f2)
+          echo "plugin_version=$PLUGIN_VERSION" >> $GITHUB_OUTPUT
+          echo "repo_version=$REPO_VERSION" >> $GITHUB_OUTPUT
+          echo "Plugin: $PLUGIN_VERSION  Repo: $REPO_VERSION"
+
+      - name: Build the repo/ tree
+        run: |
+          set -euo pipefail
+          STAGE=/tmp/kodi-repo
+          mkdir -p "$STAGE/plugin.video.nstreams"
+          mkdir -p "$STAGE/repository.nstreams"
+
+          # ── 1. Package plugin.video.nstreams ──────────────────────
+          cp -r kodi-addon /tmp/plugin.video.nstreams
+          rm -rf /tmp/plugin.video.nstreams/release /tmp/plugin.video.nstreams/.github
+          find /tmp/plugin.video.nstreams -name '__pycache__' -type d -exec rm -rf {} + || true
+          (cd /tmp && zip -r \
+            "$STAGE/plugin.video.nstreams/plugin.video.nstreams-${{ steps.versions.outputs.plugin_version }}.zip" \
+            plugin.video.nstreams)
+          cp kodi-addon/addon.xml "$STAGE/plugin.video.nstreams/addon.xml"
+
+          # ── 2. Package repository.nstreams ────────────────────────
+          cp -r kodi-repo/repository.nstreams /tmp/repository.nstreams
+          (cd /tmp && zip -r \
+            "$STAGE/repository.nstreams/repository.nstreams-${{ steps.versions.outputs.repo_version }}.zip" \
+            repository.nstreams)
+          cp kodi-repo/repository.nstreams/addon.xml "$STAGE/repository.nstreams/addon.xml"
+
+          # ── 3. Generate addons.xml (concatenation of all addon.xml files) ─
+          {
+            echo '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            echo '<addons>'
+            # Strip the XML declaration line from each addon.xml so the
+            # combined doc is well-formed.
+            tail -n +2 kodi-addon/addon.xml
+            tail -n +2 kodi-repo/repository.nstreams/addon.xml
+            echo '</addons>'
+          } > "$STAGE/addons.xml"
+
+          # ── 4. Checksum (Kodi compares this to the served addons.xml) ─
+          md5sum "$STAGE/addons.xml" | cut -d' ' -f1 > "$STAGE/addons.xml.md5"
+
+          echo "── repo/ tree ──"
+          find "$STAGE" -type f
+
+      - name: Publish to `repo` branch
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          # Use a fresh orphan branch so the history stays tiny —
+          # users only ever fetch raw files, not the git history.
+          git checkout --orphan repo
+          git rm -rf . 2>/dev/null || true
+          cp -r /tmp/kodi-repo/* .
+
+          git add -A
+          git commit -m "Publish Kodi repo for v${{ steps.versions.outputs.plugin_version }}"
+          git push -f origin repo

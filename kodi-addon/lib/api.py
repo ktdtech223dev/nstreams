@@ -23,7 +23,12 @@ from urllib import error as urlerror
 
 DEFAULT_BACKEND_URL = "https://nstreams-api-production.up.railway.app"
 USER_AGENT = "NStreams-Kodi/1.0"
-TIMEOUT_SECONDS = 8
+# Generous timeout — /api/scrape/availability fans out to all three
+# upstream providers and Railway free-tier cold starts alone burn 2-3s.
+# Most calls are sub-second; the longer ceiling only matters for the
+# slow ones and prevents the "Timeout after 8s" toast that masks healthy
+# (just-slow) scrapes.
+TIMEOUT_SECONDS = 30
 
 
 class APIError(Exception):
@@ -63,7 +68,7 @@ class API(object):
     def _request(self, method, path, query=None, body=None):
         """
         Single chokepoint for every HTTP call. Builds the URL,
-        attaches the User-Agent, enforces the 8 s timeout, decodes
+        attaches the User-Agent, enforces TIMEOUT_SECONDS, decodes
         JSON, and converts any non-2xx response into APIError so
         callers don't have to remember to check status codes.
         """

@@ -2,7 +2,7 @@
 <addon
     id="plugin.video.nstreams"
     name="N Streams"
-    version="1.0.0"
+    version="1.0.1"
     provider-name="N Games Crew">
 
     <requires>

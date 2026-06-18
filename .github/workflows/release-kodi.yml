@@ -23,20 +23,30 @@ jobs:
       # .nstreams/ so the archive root is correct, strip build-only artifacts
       # (release/, .github/), then zip from /tmp so the path inside the archive
       # stays clean.
-      - name: Build Kodi addon zip
+      - name: Build Kodi addon + repository zips
         run: |
           mkdir -p kodi-addon/release
-          cd kodi-addon && VERSION=$(grep -oE 'version="[0-9.]+"' addon.xml | head -1 | cut -d'"' -f2) && cd ..
+          PLUGIN_VERSION=$(grep -oE 'version="[0-9.]+"' kodi-addon/addon.xml | head -1 | cut -d'"' -f2)
+          REPO_VERSION=$(grep -oE 'version="[0-9.]+"' kodi-repo/repository.nstreams/addon.xml | head -1 | cut -d'"' -f2)
+
+          # plugin.video.nstreams-<plugin_version>.zip
           cp -r kodi-addon /tmp/plugin.video.nstreams
           rm -rf /tmp/plugin.video.nstreams/release /tmp/plugin.video.nstreams/.github
-          (cd /tmp && zip -r "$GITHUB_WORKSPACE/kodi-addon/release/plugin.video.nstreams-${VERSION}.zip" plugin.video.nstreams)
+          find /tmp/plugin.video.nstreams -name '__pycache__' -type d -exec rm -rf {} + || true
+          (cd /tmp && zip -r "$GITHUB_WORKSPACE/kodi-addon/release/plugin.video.nstreams-${PLUGIN_VERSION}.zip" plugin.video.nstreams)
+
+          # repository.nstreams-<repo_version>.zip — install ONCE for auto-updates.
+          cp -r kodi-repo/repository.nstreams /tmp/repository.nstreams
+          (cd /tmp && zip -r "$GITHUB_WORKSPACE/kodi-addon/release/repository.nstreams-${REPO_VERSION}.zip" repository.nstreams)
 
       # ── Attach to the same release the Windows / Linux jobs create ────────────
-      - name: Attach Kodi addon zip to GitHub Release
+      - name: Attach Kodi addon zips to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           name: "N Streams ${{ github.ref_name }}"
           generate_release_notes: true
-          files: kodi-addon/release/plugin.video.nstreams-*.zip
+          files: |
+            kodi-addon/release/plugin.video.nstreams-*.zip
+            kodi-addon/release/repository.nstreams-*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
