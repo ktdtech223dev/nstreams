@@ -2,7 +2,7 @@
 <addon
     id="plugin.video.nstreams"
     name="N Streams"
-    version="1.0.4"
+    version="1.0.5"
     provider-name="N Games Crew">
 
     <requires>
@@ -44,6 +44,13 @@
         <website></website>
         <source></source>
         <news>
+v1.0.5 (2026-06-18)
+- Pi-local goojara extractor (kodi-addon/lib/extractors/goojara.py).
+  Scrapes directly from the Pi's residential IP so Cloudflare's
+  data-center-IP gate on Railway no longer blocks playback. Falls
+  through to Railway if the local path fails.
+- Exact normalized title match preferred over fuzzy similarity —
+  "The Boys" no longer accidentally pairs with "TallBoyz (2019)".
 v1.0.4 (2026-06-18)
 - script.module.resolveurl import is now OPTIONAL so the addon installs
   on Kodi instances without the Gujal repo. Playback still requires it;

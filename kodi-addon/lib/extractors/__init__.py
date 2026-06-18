@@ -10,8 +10,14 @@ that ResolveURL doesn't cover. Add to LOCAL by provider name; the
 playback path will pick it up when present.
 """
 
-LOCAL = {}
-
-
 class ExtractorError(Exception):
     pass
+
+
+# Imported AFTER ExtractorError is defined so the submodule can
+# `from . import ExtractorError` without a circular import.
+from . import goojara  # noqa: E402
+
+LOCAL = {
+    'goojara': goojara,
+}

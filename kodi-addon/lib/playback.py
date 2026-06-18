@@ -152,6 +152,17 @@ def play(handle, api, content_id, season=None, episode=None,
         fail(handle)
         return
 
+    # Pi-local extraction first. Railway gets Cloudflare-gated on goojara
+    # (and was DNS-filtered on the dead embed providers), but the Pi sits
+    # on a residential IP that goojara doesn't bot-flag. When the local
+    # extractor returns ok=True we never round-trip through /api/stream;
+    # on local failure / missing extractor we fall through to the backend
+    # path which carries the cached results.
+    response = _try_local_extract(api, provider, content_id, season, episode)
+    if response is not None and response.get('ok'):
+        _play_native(handle, api, response, content_id, season, episode, provider)
+        return
+
     try:
         response = api.get_stream(provider, content_id,
                                   season=season, episode=episode)
@@ -180,6 +191,59 @@ def play(handle, api, content_id, season=None, episode=None,
     else:
         _play_fallback(handle, response, embed_url,
                        allow_chromium_fallback)
+
+
+# ── Pi-local extractor dispatch ────────────────────────────────────────
+
+def _try_local_extract(api, provider, content_id, season, episode):
+    """Try a Pi-local Python extractor for `provider` before hitting Railway.
+
+    Returns the same shape /api/stream returns on success
+    ({ok, stream_url, headers, subtitles, site_url, provider}) so the
+    caller can drop the response straight into _play_native. Returns
+    None when no local extractor is registered for this provider OR when
+    the extractor crashed with a non-ExtractorError (so the backend
+    fallback gets a chance).
+    """
+    try:
+        from lib.extractors import LOCAL, ExtractorError
+    except Exception as exc:
+        _log('lib.extractors unavailable: {0}'.format(exc), xbmc.LOGWARNING)
+        return None
+    extractor = LOCAL.get(provider)
+    if extractor is None:
+        return None
+
+    # The extractor needs the full content row (tmdb_id, title, type,
+    # release_year). api.get_content is cached so this is cheap on
+    # repeat plays.
+    try:
+        content = api.get_content(content_id)
+    except Exception as exc:
+        _log('get_content({0}) for local extract failed: {1}'.format(
+            content_id, exc), xbmc.LOGWARNING)
+        return None
+
+    try:
+        result = extractor.extract(content, season, episode)
+    except ExtractorError as exc:
+        _log('local {0}: {1}'.format(provider, exc), xbmc.LOGINFO)
+        return None
+    except Exception as exc:
+        _log('local {0} crashed: {1}'.format(provider, exc), xbmc.LOGERROR)
+        return None
+
+    _log('local {0} OK: {1}'.format(
+        provider, (result.get('stream_url') or '')[:80]), xbmc.LOGINFO)
+    return {
+        'ok': True,
+        'stream_url': result.get('stream_url'),
+        'headers': result.get('headers') or {},
+        'subtitles': result.get('subtitles') or [],
+        'site_url': result.get('site_url'),
+        'provider': provider,
+        'cached': False,
+    }
 
 
 # ── hoster resolution (ResolveURL bridge) ──────────────────────────────
