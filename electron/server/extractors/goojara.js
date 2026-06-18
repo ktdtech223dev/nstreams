@@ -91,8 +91,14 @@ async function fetchPage(url, jar, referer) {
 // Pull title + year out of the search-result anchor. Multiple "Boys" shows
 // exist — year is the only reliable disambiguator.
 function scanIndexHtml(html, title, year) {
+  return scanIndexHtmlDetailed(html, title, year).slug;
+}
+
+// Same logic, exposes the best non-passing candidate too so callers can
+// report what they almost matched on a miss.
+function scanIndexHtmlDetailed(html, title, year) {
   const $ = cheerio.load(html || '');
-  let best = { slug: null, score: 0 };
+  let best = { slug: null, score: 0, candidate_title: null };
   $('a[href^="https://ww1.goojara.to/"][title]').each((_, a) => {
     const href = $(a).attr('href') || '';
     const t = $(a).attr('title') || '';
@@ -103,9 +109,12 @@ function scanIndexHtml(html, title, year) {
     const [, rTitle, rYear] = titleMatch;
     let score = similarity(title, rTitle);
     if (year && parseInt(rYear, 10) === parseInt(year, 10)) score += 0.25;
-    if (score > best.score) best = { slug: slugMatch[1], score };
+    if (score > best.score) best = { slug: slugMatch[1], score, candidate_title: t };
   });
-  return best.score >= 0.75 ? best.slug : null;
+  return {
+    slug: best.score >= 0.75 ? best.slug : null,
+    best: best.candidate_title ? { title: best.candidate_title, score: Number(best.score.toFixed(2)) } : null
+  };
 }
 
 async function getAzPage(letter, page, jar) {
@@ -153,12 +162,11 @@ async function getSlugForTitle(content, jar) {
     if (/[A-Z]/.test(first)) candidates.add(first);
     if (/[A-Z]/.test(kw)) candidates.add(kw);
 
-    // Probe pages 1-9 of each candidate letter in parallel batches of 3 so
-    // a cold-cache lookup completes in ~3 round trips instead of ~18. The
-    // first batch that scores >=0.75 wins; pages that come back empty are
-    // skipped, and we stop walking further pages of a letter once we know
-    // it's exhausted (short HTML signal).
+    // Probe pages 1-9 of each candidate letter in parallel batches of 3.
+    // Track diagnostics so the "no match" error names the actual cause
+    // (Cloudflare gating short pages vs. genuine "not in catalog").
     const BATCH = 3;
+    const stats = { letters_searched: [...candidates], pages_scanned: 0, pages_empty: 0, pages_short: 0, best_seen: null };
     for (const letter of candidates) {
       for (let startP = 1; startP <= 9; startP += BATCH) {
         const endP = Math.min(startP + BATCH - 1, 9);
@@ -168,18 +176,23 @@ async function getSlugForTitle(content, jar) {
         let shortPageSeen = false;
         for (let i = 0; i < htmls.length; i++) {
           const html = htmls[i];
-          if (!html) { shortPageSeen = true; continue; }
-          const slug = scanIndexHtml(html, title, year);
-          if (slug) {
-            SLUG_CACHE.set(cacheKey, { slug, ts: Date.now() });
-            return slug;
+          stats.pages_scanned += 1;
+          if (!html) { stats.pages_empty += 1; shortPageSeen = true; continue; }
+          if (html.length < 8000) { stats.pages_short += 1; shortPageSeen = true; }
+          const scan = scanIndexHtmlDetailed(html, title, year);
+          if (scan.slug) {
+            SLUG_CACHE.set(cacheKey, { slug: scan.slug, ts: Date.now() });
+            return scan.slug;
           }
-          if (html.length < 8000) shortPageSeen = true;
+          if (scan.best && (!stats.best_seen || scan.best.score > stats.best_seen.score)) {
+            stats.best_seen = scan.best;
+          }
         }
         if (shortPageSeen) break;
       }
     }
-    throw new ExtractorError(`goojara: no slug match for "${title}" (${year || '?'})`);
+    const detail = ` [searched=${stats.letters_searched.join(',')} pages=${stats.pages_scanned} empty=${stats.pages_empty} short=${stats.pages_short} best=${stats.best_seen ? JSON.stringify(stats.best_seen) : 'none'}]`;
+    throw new ExtractorError(`goojara: no slug match for "${title}" (${year || '?'})${detail}`);
   })().finally(() => SLUG_INFLIGHT.delete(cacheKey));
   SLUG_INFLIGHT.set(cacheKey, promise);
   return promise;
@@ -288,8 +301,12 @@ function isPlayableHosterUrl(url) {
 }
 
 function pickHosterOrder($) {
+  // goojara emits ABSOLUTE hrefs (https://ww1.goojara.to/go.php?url=...)
+  // not relative paths. `href^="/go.php?url="` matched zero anchors on
+  // every real page — use `[href*=".go.php?url="]` to catch both shapes.
+  // Tested on the live B-page-5 anchor for The Boys S1E1.
   const all = [];
-  $('a.bcg[href^="/go.php?url="]').each((_, a) => {
+  $('a.bcg[href*="/go.php?url="]').each((_, a) => {
     const href = $(a).attr('href') || '';
     const label = $(a).text().toLowerCase();
     const tok = /url=([^&"']+)/.exec(href);
