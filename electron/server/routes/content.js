@@ -5,7 +5,7 @@ const scrapers = require('../scrapers');
 const { PROVIDERS } = require('../scrapers');
 const { deepLinkFor, loginUrlFor, requiresDrm } = require('../deeplinks');
 
-const STREAM_PROVIDERS = ['miruro', 'vidsrc', 'embedsu'];
+const STREAM_PROVIDERS = ['goojara'];
 
 const router = express.Router();
 
@@ -449,6 +449,10 @@ router.get('/stream/:provider', async (req, res) => {
       fallback_embed_url = isMovie
         ? PROVIDERS.embedsu.movie(content.tmdb_id)
         : PROVIDERS.embedsu.tv(content.tmdb_id, season, episode);
+    } else if (provider === 'goojara') {
+      // goojara has no stable embed page — slug is resolved per-title at
+      // extraction time via A-Z index walking. No fallback iframe URL.
+      fallback_embed_url = null;
     }
 
     const cacheKey = `${provider}:${content_id}:${season}:${episode}`;
@@ -465,10 +469,13 @@ router.get('/stream/:provider', async (req, res) => {
         stream_url: result.stream_url,
         headers: result.headers || {},
         subtitles: result.subtitles || [],
-        // site_url is the embed page the extractor walked. Sessions are
-        // logged with this so the activity feed shows a clickable origin
-        // instead of a raw .m3u8.
-        site_url: fallback_embed_url,
+        // site_url is the page the extractor walked (e.g. goojara's
+        // episode page). Sessions are logged with this so the activity
+        // feed shows a clickable origin instead of a raw .m3u8 / hoster
+        // CDN URL. Prefer extractor-supplied origin; fall back to the
+        // static embed-URL builder for legacy providers that didn't
+        // surface a site_url field.
+        site_url: result.site_url || fallback_embed_url,
         provider,
         cached: false
       };

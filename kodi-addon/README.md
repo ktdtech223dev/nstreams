@@ -47,9 +47,11 @@ matter on a 10-foot UI:
 - Watchlist add / remove / mark-watched
 - Per-episode resume positions
 - Anime, TV, and movie browsing and search
-- Provider fallback chain (`miruro` → `vidsrc` → `embedsu`) handled server-side
-- Chromium browser fallback (optional, opens `chromium-browser` when the raw
-  HLS extractor fails) — disabled by default on Pi installs without Chromium
+- Source provider (`goojara`) handled server-side; `script.module.resolveurl`
+  cracks the per-session hoster URL on the device
+- Chromium browser fallback (optional legacy path, opens `chromium-browser`
+  when an extractor surfaces an embed URL it can't resolve) — does nothing on
+  LibreELEC, leave disabled
 
 ---
 
@@ -86,19 +88,49 @@ matter on a 10-foot UI:
   through the backend, but Kodi's own thumbnail cache lives on the boot
   device and slow storage is the most common cause of "menu feels laggy".
 
+**Required for playback**
+
+- **`script.module.resolveurl` from the Gujal repo.** The goojara extractor
+  returns a file-host landing page (doodstream / luluvdo / wootly / streamplay)
+  rather than a raw `.m3u8` manifest — ResolveURL is the library that turns
+  those pages into a playable MP4 URL. Kodi will refuse to install N Streams
+  v1.0.3+ without it. Install steps are in §3a, below.
+
 **Optional**
 
-- `chromium-browser` on `PATH`, only if you want the fallback path to launch
-  a browser when raw HLS extraction fails. The add-on never installs or
-  expects Chromium — leave it out for the leanest install.
+- `chromium-browser` on `PATH`. The legacy embed-fallback path tries this
+  when present; on LibreELEC ARM there's no working Chromium build, so the
+  fallback is a no-op there. Leave it out unless you're on Pi OS Desktop
+  with the Electron build.
 
 ---
 
 ## 3. Installation
 
-### 3a. Download the release zip
+### 3a. Install the Gujal repo so ResolveURL is available
 
-Grab `plugin.video.nstreams-1.0.0.zip` from the latest release on GitHub:
+The goojara extractor returns hoster pages, not direct video. ResolveURL is
+the library that cracks them. Install order matters: bring in the Gujal repo
+first, then install N Streams from a zip, and Kodi will auto-pull ResolveURL
+as a dependency.
+
+1. Download the latest Gujal repository zip — `repository.gujal-*.zip` —
+   from <https://gujal00.github.io/repos/>.
+2. Copy it onto the Kodi device (USB, SMB, scp).
+3. In Kodi: *Settings → Add-ons → Install from zip file* → pick the Gujal
+   repository zip. Kodi shows *Gujal's Kodi Repository — installed*.
+
+You don't need to install ResolveURL by hand — when you install N Streams in
+the next step, Kodi sees the `<import addon="script.module.resolveurl"/>` in
+N Streams' manifest, scans every enabled repository for it, finds it in the
+Gujal repo it just registered, and pulls it in automatically.
+
+If Kodi refuses N Streams' install with *"Dependency not met: script.module.
+resolveurl"*, the Gujal repo isn't enabled — go back to step 1.
+
+### 3b. Download the N Streams release zip
+
+Grab `plugin.video.nstreams-1.0.3.zip` (or whatever the current tag is) from the latest release on GitHub:
 
 > https://github.com/your-org/NStreams/releases
 
@@ -117,7 +149,7 @@ zip -r ../plugin.video.nstreams-1.0.0.zip . \
 The repository's `kodi-addon/` directory **is** the add-on root — its
 `addon.xml` sits at the top level of the zip.
 
-### 3b. Allow installs from outside the official repo
+### 3c. Allow installs from outside the official repo
 
 Kodi blocks unsigned zips by default.
 
@@ -130,7 +162,7 @@ Kodi blocks unsigned zips by default.
    destination is your backend URL — but the warning is Kodi-wide and cannot
    be suppressed per-add-on.
 
-### 3c. Install the zip
+### 3d. Install the zip
 
 1. Back in *Settings → Add-ons*, choose **Install from zip file**.
 2. Browse to wherever you copied `plugin.video.nstreams-1.0.0.zip`.
@@ -140,7 +172,7 @@ Kodi blocks unsigned zips by default.
 The add-on now appears under *Add-ons → Video add-ons → N Streams* and in the
 main *Videos* menu.
 
-### 3d. First-run configuration
+### 3e. First-run configuration
 
 Open *N Streams* once so the settings file is generated, then configure it:
 
@@ -155,14 +187,10 @@ Open *N Streams* once so the settings file is generated, then configure it:
 4. Set **Backend URL**. Default:
    `https://nstreams-api-production.up.railway.app`. Change it only if you
    are self-hosting the backend.
-5. (Optional) Toggle **Enable Chromium fallback** to **Off** on Pi installs
-   without Chromium. With it on, a failed extraction will try to launch
-   `chromium-browser`; with it off, you get a clean "Source unavailable"
-   toast instead.
-6. (Optional) Set **Preferred provider order**. The default
-   `miruro,vidsrc,embedsu` matches the desktop client and is what the
-   backend's `PROVIDERS` constant returns. Leave it alone unless you know
-   one provider is broken in your region.
+5. (Optional) Toggle **Enable Chromium fallback** to **Off** on LibreELEC
+   and any other build without `chromium-browser` on `PATH`. The flag only
+   matters for the legacy embed path, which is dead in v1.3.3+ — all live
+   playback runs through goojara + ResolveURL regardless of this toggle.
 
 Press *OK* to save. The add-on is ready.
 

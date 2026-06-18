@@ -30,6 +30,7 @@ References:
     https://kodi.wiki/view/Add-on:InputStream_Adaptive
 """
 
+import re
 import subprocess
 import threading
 import time
@@ -64,6 +65,30 @@ PROGRESS_HEARTBEAT_S = 30.0
 # images and Ubuntu it's `chromium`. Try both so the addon works without
 # the user editing PATH.
 CHROMIUM_BINARIES = ('chromium-browser', 'chromium')
+
+# Hoster domains the backend (e.g. the goojara extractor) may hand back
+# unresolved — these are file-host landing pages, not playable media URLs,
+# so they need a pass through script.module.resolveurl before we can feed
+# them to Kodi's player. Keep the family list narrow: each entry maps to
+# a ResolveURL plugin that's been verified to still work. Matches both
+# the apex and any www./cdn./ subdomain, and tolerates the TLD churn these
+# sites are infamous for (.com → .ch → .re → .to ...).
+KNOWN_HOSTERS_RE = re.compile(
+    r'^https?://(?:[\w-]+\.)*'
+    r'(?:doodstream|dood|d000d|ds2play|dooood|'
+    r'luluvdo|'
+    r'wootly|'
+    r'streamtape|streamta|stape|tapewithadblock|'
+    r'filemoon|moonfile|'
+    r'mixdrop|mxdrop|mdy48tn97n|'
+    r'streamwish|swhoi|streamwis|'
+    r'vidoza|videzz|vidozatv|'
+    r'vidmoly|molystream|'
+    r'fembed|femax20|feurl|fcdn|embedsito|'
+    r'streamplay)'
+    r'\.[a-z]{2,6}(?:/|$)',
+    re.IGNORECASE,
+)
 
 
 # ── logging ────────────────────────────────────────────────────────────
@@ -157,6 +182,28 @@ def play(handle, api, content_id, season=None, episode=None,
                        allow_chromium_fallback)
 
 
+# ── hoster resolution (ResolveURL bridge) ──────────────────────────────
+
+def _resolve_hoster(url, headers):
+    """Try ResolveURL on a known hoster URL. Returns playable URL with
+    |Referer suffix Kodi VFS handles, or None."""
+    try:
+        import resolveurl
+    except ImportError:
+        _log("script.module.resolveurl not installed", xbmc.LOGWARNING)
+        return None
+    try:
+        hmf = resolveurl.HostedMediaFile(url=url, include_disabled=False,
+                                         include_universal=True)
+        if not hmf or not hmf.valid_url():
+            return None
+        resolved = hmf.resolve(return_all=False)
+        return resolved if isinstance(resolved, str) and resolved else None
+    except Exception as exc:
+        _log("resolveurl error: " + str(exc), xbmc.LOGWARNING)
+        return None
+
+
 # ── native HLS via inputstream.adaptive ────────────────────────────────
 
 def _play_native(handle, api, response, content_id, season, episode, provider):
@@ -175,35 +222,88 @@ def _play_native(handle, api, response, content_id, season, episode, provider):
     headers = response.get('headers') or {}
     subtitles = response.get('subtitles') or []
 
+    # If the backend handed us a file-host landing page instead of a
+    # ready-to-play manifest (goojara/embedsu-style extractors emit these
+    # as a final step because the real CDN URL rotates per-session), route
+    # it through script.module.resolveurl before touching inputstream.adaptive.
+    # Already-resolved .m3u8 / unknown-host URLs skip this and fall through
+    # to the existing HLS path unchanged.
+    resolved_has_suffix = False
+    if KNOWN_HOSTERS_RE.match(stream_url or ''):
+        _log('hoster URL detected, dispatching to resolveurl: {0}'.format(
+            stream_url))
+        resolved = _resolve_hoster(stream_url, headers)
+        if not resolved:
+            _notify('Could not resolve stream',
+                    icon=xbmcgui.NOTIFICATION_ERROR)
+            fail(handle)
+            return
+        # ResolveURL hands back either a bare URL or a `url|Header=val&...`
+        # blob — the suffix takes precedence over inputstream.adaptive's
+        # manifest_headers/stream_headers on Kodi VFS, so when it's present
+        # we must NOT also push our own header_blob or Kodi gets confused
+        # and one of the two header sources silently wins.
+        resolved_has_suffix = '|' in resolved
+        stream_url = resolved
+
+    # Detect the actual container so we don't ask inputstream.adaptive to
+    # demux a progressive MP4. Strip any |Header=... suffix Kodi VFS appends,
+    # strip query/fragment, look at the path. Hoster-resolved URLs from
+    # doodstream/luluvdo/wootly are MP4; only an .m3u8 path goes to
+    # inputstream.adaptive. Without this branch a progressive MP4 hits the
+    # HLS demuxer, returns "Playback failed" within 2 seconds, and the user
+    # never sees a frame.
+    bare = stream_url.split('|', 1)[0].split('#', 1)[0].split('?', 1)[0].lower()
+    is_hls = bare.endswith('.m3u8')
+
     # offscreen=True skips the expensive skin-rendering pass on a
     # ListItem that's only ever going to be handed back through
     # setResolvedUrl — saves ~15-30 ms on the Pi 3B+ where every frame
     # of UI work matters.
     listitem = xbmcgui.ListItem(path=stream_url, offscreen=True)
-    listitem.setMimeType('application/vnd.apple.mpegurl')
 
-    # setContentLookup(False) tells Kodi to trust the MIME type we just
-    # set instead of issuing a HEAD request to sniff Content-Type — some
-    # CDNs (vidsrc's in particular) 403 HEAD while happily serving GET,
-    # so skipping the probe avoids a spurious "Playback failed" toast.
-    listitem.setContentLookup(False)
+    if is_hls:
+        listitem.setMimeType('application/vnd.apple.mpegurl')
+        # setContentLookup(False) tells Kodi to trust the MIME type we just
+        # set instead of issuing a HEAD request to sniff Content-Type — some
+        # CDNs (vidsrc's in particular) 403 HEAD while happily serving GET,
+        # so skipping the probe avoids a spurious "Playback failed" toast.
+        listitem.setContentLookup(False)
+        listitem.setProperty('inputstream', INPUTSTREAM_ADDON_ID)
+        # manifest_type is technically deprecated in Kodi 22 (auto-detected
+        # from MIME / URL) but still required in Kodi 21 / inputstream.adaptive
+        # 21.x — without it the addon refuses to pick the HLS demuxer.
+        listitem.setProperty('inputstream.adaptive.manifest_type', 'hls')
 
-    listitem.setProperty('inputstream', INPUTSTREAM_ADDON_ID)
-    # manifest_type is technically deprecated in Kodi 22 (auto-detected
-    # from MIME / URL) but still required in Kodi 21 / inputstream.adaptive
-    # 21.x — without it the addon refuses to pick the HLS demuxer.
-    listitem.setProperty('inputstream.adaptive.manifest_type', 'hls')
-
-    header_blob = _encode_headers(headers)
-    if header_blob:
-        # Apply to both manifest and segment requests. For HLS the m3u8
-        # and .ts/.m4s segments share an origin, so the same Referer/UA
-        # works for both — and a CDN that gates one but not the other
-        # (cough Cloudflare) won't bite us.
-        listitem.setProperty('inputstream.adaptive.manifest_headers',
-                             header_blob)
-        listitem.setProperty('inputstream.adaptive.stream_headers',
-                             header_blob)
+        header_blob = _encode_headers(headers)
+        if header_blob and not resolved_has_suffix:
+            # Apply to both manifest and segment requests. For HLS the m3u8
+            # and .ts/.m4s segments share an origin, so the same Referer/UA
+            # works for both — and a CDN that gates one but not the other
+            # (cough Cloudflare) won't bite us.
+            #
+            # Skipped when ResolveURL already returned a `|Referer=...`
+            # suffix: the VFS suffix takes precedence anyway, so setting
+            # both invites confusing precedence bugs across Kodi 21/22.
+            listitem.setProperty('inputstream.adaptive.manifest_headers',
+                                 header_blob)
+            listitem.setProperty('inputstream.adaptive.stream_headers',
+                                 header_blob)
+    else:
+        # Progressive container (mp4/mkv/webm/ts). Kodi's default ffmpeg
+        # player handles these natively — no inputstream.adaptive setup,
+        # no manifest_type. setContentLookup(False) still helps when the
+        # CDN 403s HEAD probes. Headers ride on the URL suffix only.
+        listitem.setContentLookup(False)
+        # Only attach our header bundle as a URL suffix when ResolveURL
+        # didn't already add one. The goojara Referer wouldn't help a
+        # doodstream CDN anyway, but the User-Agent might.
+        if not resolved_has_suffix:
+            ua = headers.get('User-Agent') or headers.get('user-agent') or ''
+            if ua:
+                # Single-header suffix, just User-Agent — leave Referer off
+                # since hoster CDNs gate on their own origin, not goojara's.
+                listitem.setPath(stream_url + '|User-Agent=' + ua)
 
     if subtitles:
         # Kodi VFS fetches subtitles itself (NOT through inputstream.adaptive)

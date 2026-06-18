@@ -42,6 +42,11 @@ const PROVIDERS = {
     movie: (tid)              => `https://www.2embed.cc/embed/${tid}`,
     tv:    (tid, s = 1, e = 1) => `https://www.2embed.cc/embedtv/${tid}&s=${s}&e=${e}`
   }
+
+  // goojara: dynamic — slug resolved at extraction time via extractors/goojara.js,
+  // no static URL template. Show pages live at ww1.goojara.to/<slug> but slug is
+  // looked up by walking the A-Z index per-title; episode pages live at
+  // ww1.goojara.to/<episode_slug>, resolved via POST /xmre.php.
 };
 
 function normalize(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]/g, ''); }
@@ -347,6 +352,25 @@ async function sflixResults(content) {
   }));
 }
 
+// goojara — dynamic slug lookup, no static site_url. Surfaces as a source row
+// in the Kodi UI so users can pick it; the actual stream URL is resolved
+// server-side by extractors/goojara.js when /api/stream/goojara is hit.
+function goojaraResults(content) {
+  const isMovie = content.type === 'movie';
+  return [{
+    provider: 'goojara',
+    provider_name: 'Goojara',
+    // No stable site_url — extractor resolves slug + hoster at stream time.
+    // Leave null so the UI knows to call /api/stream/goojara instead of iframing.
+    site_url: null,
+    title: content.title,
+    image: content.poster_path,
+    match_score: 100,
+    category: isMovie ? 'movie' : 'tv',
+    note: 'Native extraction · slug resolved on demand'
+  }];
+}
+
 // ─── Top-level resolver ─────────────────────────────────────
 async function resolveAvailability(contentId, { userId, season, episode } = {}) {
   const db = getDB();
@@ -384,6 +408,9 @@ async function resolveAvailability(contentId, { userId, season, episode } = {}) 
       sflixResults(content)
     ]);
     results.push(...flix, ...sflix);
+    // goojara surfaces as a dynamic source — slug + hoster resolved at
+    // stream time, no pre-flight scrape. Always include for movies + TV.
+    results.push(...goojaraResults(content));
   }
 
   // Grouped Embed Players card — always offered for movies + TV with a TMDB ID.

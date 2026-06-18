@@ -2,12 +2,18 @@
 <addon
     id="plugin.video.nstreams"
     name="N Streams"
-    version="1.0.2"
+    version="1.0.3"
     provider-name="N Games Crew">
 
     <requires>
         <import addon="xbmc.python" version="3.0.0"/>
         <import addon="inputstream.adaptive" version="21.0.0" optional="false"/>
+        <!-- script.module.resolveurl is REQUIRED because the goojara
+             extractor (the only live provider as of v1.3.3) returns a
+             file-host landing page (doodstream/luluvdo/wootly), not a
+             raw HLS manifest. ResolveURL turns that page into a playable
+             MP4 URL. Install via the Gujal repo — see README.md. -->
+        <import addon="script.module.resolveurl" version="5.1.0" optional="false"/>
     </requires>
 
     <extension point="xbmc.python.pluginsource" library="addon.py">
@@ -34,6 +40,15 @@
         <website></website>
         <source></source>
         <news>
+v1.0.3 (2026-06-18)
+- Pivot to goojara as the live source provider (embed.su parked,
+  vidsrc Turnstile-walled, miruro JWE-encrypted — all unworkable).
+- script.module.resolveurl now a hard dependency: hosts the per-session
+  hoster URL crack (doodstream / luluvdo / wootly / streamplay).
+- Playback branches on container: MP4 from hosters uses Kodi's default
+  ffmpeg player; .m3u8 stays on inputstream.adaptive.
+- Backend goojara extractor: in-flight dedupe, parallel A-Z page batches,
+  stale-slug invalidation with one-shot retry.
 v1.0.0 (2026-06-18)
 - Initial release of N Streams for Kodi 21 (Omega).
 - HLS playback via InputStream Adaptive 21.x with manifest and segment header forwarding.

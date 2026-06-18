@@ -459,10 +459,14 @@ def build_anime_episodes(handle, api, content_id):
 
 # ─── Build: sources ───────────────────────────────────────────
 
-# Providers we know how to extract raw HLS for — the backend's
-# /api/stream/:provider returns a direct stream_url for these. Anything
-# else goes through the Chromium fallback path.
-STREAM_PROVIDERS = {'miruro', 'vidsrc', 'embedsu'}
+# Providers the backend's /api/stream/:provider returns a stream_url for.
+# Rows for these providers route to action=play; everything else would
+# normally go to action=play_fallback (Chromium kiosk) which is dead on
+# LibreELEC ARM. As of v1.3.3 the only live provider is goojara — the
+# embed-aggregator family (miruro/vidsrc/embedsu) is architecturally dead
+# (parked domain / Turnstile / encrypted pipe) and removed from the route's
+# whitelist in electron/server/routes/content.js:8.
+STREAM_PROVIDERS = {'goojara'}
 
 
 def build_sources(handle, api, content_id, season, episode):
@@ -530,7 +534,11 @@ def build_sources(handle, api, content_id, season, episode):
         if score is not None:
             bits.append('{}% match'.format(int(score)))
         if native:
-            bits.append('Direct HLS')
+            # As of v1.3.3 the only native provider (goojara) hands back a
+            # file-host MP4 via ResolveURL, not raw HLS. Honest label even
+            # if a future HLS provider rejoins — "Direct file host" reads
+            # right for both.
+            bits.append('Direct file host')
         else:
             bits.append('Browser fallback')
         label = '  ·  '.join(bits)
@@ -549,7 +557,7 @@ def build_sources(handle, api, content_id, season, episode):
         if score is not None:
             plot_lines.append('Match: {}%'.format(int(score)))
         plot_lines.append(
-            'Playback: inputstream.adaptive (native, hardware-decoded)'
+            'Playback: native via ResolveURL (hardware-decoded MP4/HLS)'
             if native else
             'Playback: Chromium fallback (heavier — last resort on Pi)'
         )
