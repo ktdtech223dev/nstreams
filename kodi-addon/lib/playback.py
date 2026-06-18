@@ -186,11 +186,20 @@ def play(handle, api, content_id, season=None, episode=None,
 
 def _resolve_hoster(url, headers):
     """Try ResolveURL on a known hoster URL. Returns playable URL with
-    |Referer suffix Kodi VFS handles, or None."""
+    |Referer suffix Kodi VFS handles, or None.
+
+    script.module.resolveurl is declared optional in addon.xml so a
+    fresh install on a Kodi instance without the Gujal repo still loads
+    the addon. When the import is missing we surface a one-line toast
+    directing the user to fix it, instead of the generic "Could not
+    resolve stream" message — saves the user a kodi.log dig.
+    """
     try:
         import resolveurl
     except ImportError:
         _log("script.module.resolveurl not installed", xbmc.LOGWARNING)
+        _notify("Install ResolveURL from the Gujal repo to enable playback",
+                icon=xbmcgui.NOTIFICATION_WARNING, time_ms=6000)
         return None
     try:
         hmf = resolveurl.HostedMediaFile(url=url, include_disabled=False,

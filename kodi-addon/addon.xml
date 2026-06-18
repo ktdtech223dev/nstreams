@@ -2,18 +2,22 @@
 <addon
     id="plugin.video.nstreams"
     name="N Streams"
-    version="1.0.3"
+    version="1.0.4"
     provider-name="N Games Crew">
 
     <requires>
         <import addon="xbmc.python" version="3.0.0"/>
         <import addon="inputstream.adaptive" version="21.0.0" optional="false"/>
-        <!-- script.module.resolveurl is REQUIRED because the goojara
-             extractor (the only live provider as of v1.3.3) returns a
-             file-host landing page (doodstream/luluvdo/wootly), not a
-             raw HLS manifest. ResolveURL turns that page into a playable
-             MP4 URL. Install via the Gujal repo — see README.md. -->
-        <import addon="script.module.resolveurl" version="5.1.0" optional="false"/>
+        <!-- script.module.resolveurl is NEEDED for playback (the goojara
+             provider returns hoster landing pages; ResolveURL cracks
+             them). Marked OPTIONAL so the addon still installs cleanly
+             on Kodi instances that don't have the Gujal repo yet —
+             catalog / profile / activity tracking all work without it,
+             only the play action degrades to a clean "Could not resolve
+             stream" toast (see playback.py:_resolve_hoster). Once the
+             user installs the Gujal repo (https://gujal00.github.io/repos/),
+             Kodi auto-pulls ResolveURL on the next addon update. -->
+        <import addon="script.module.resolveurl" version="5.1.0" optional="true"/>
     </requires>
 
     <extension point="xbmc.python.pluginsource" library="addon.py">
@@ -40,6 +44,10 @@
         <website></website>
         <source></source>
         <news>
+v1.0.4 (2026-06-18)
+- script.module.resolveurl import is now OPTIONAL so the addon installs
+  on Kodi instances without the Gujal repo. Playback still requires it;
+  install the Gujal repo to enable.
 v1.0.3 (2026-06-18)
 - Pivot to goojara as the live source provider (embed.su parked,
   vidsrc Turnstile-walled, miruro JWE-encrypted — all unworkable).
