@@ -69,11 +69,15 @@ Module._resolveFilename = function (req, parent, ...rest) {
 };
 require.cache['electron-shim'] = { id: 'electron-shim', filename: 'electron-shim', loaded: true, exports: Electron };
 
+// Pi builds swap the party subsystem for a no-op stub. Honor the same
+// env flag the build pipeline uses so the smoke gate passes on Pi too.
+const PI_BUILD = process.env.NSTREAMS_PI === '1';
+
 const root = path.join(__dirname, '..');
 const modules = [
   'electron/main.js',
   'electron/preload.js',
-  'electron/party.js',
+  PI_BUILD ? 'electron/party-noop.js' : 'electron/party.js',
   'electron/oauth.js',
   'electron/viewer-preload.js',
   'electron/server/index.js',

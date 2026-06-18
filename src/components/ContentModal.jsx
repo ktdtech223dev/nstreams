@@ -8,6 +8,7 @@ import { useApp } from '../App';
 import EpisodeTracker from './EpisodeTracker';
 
 const IS_ANDROID = import.meta.env.VITE_PLATFORM === 'android' || (typeof window !== 'undefined' && !!window.Capacitor);
+const IS_PI = import.meta.env.VITE_PLATFORM === 'pi';
 
 const TABS = [
   { id: 'overview', label: 'Overview', icon: Info },
@@ -228,7 +229,7 @@ export default function ContentModal({ contentId, onClose }) {
             style={{ background: 'linear-gradient(180deg, rgba(8,8,16,0.3) 0%, rgba(8,8,16,0.95) 100%)' }}
           />
           <div className="absolute top-4 right-4 flex gap-2">
-            {!IS_ANDROID && (
+            {!IS_ANDROID && !IS_PI && (
               <button
                 onClick={() => { openWatchParty(contentId); }}
                 className="btn btn-primary"

@@ -4,6 +4,7 @@ import { useApp } from '../App';
 import { useParty, DEFAULT_RELAY_URL } from '../party/PartyContext';
 
 const IS_ANDROID = import.meta.env.VITE_PLATFORM === 'android' || (typeof window !== 'undefined' && !!window.Capacitor);
+const IS_PI = import.meta.env.VITE_PLATFORM === 'pi';
 const RAILWAY_URL = 'https://nstreams-api-production.up.railway.app/api';
 
 export default function Settings() {
@@ -309,7 +310,7 @@ export default function Settings() {
 
       <AboutSection />
 
-      {!IS_ANDROID && <WatchPartySection />}
+      {!IS_ANDROID && !IS_PI && <WatchPartySection />}
 
       {!IS_ANDROID && <DnsSection />}
 

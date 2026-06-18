@@ -1,0 +1,68 @@
+name: Build & Release Linux ARM64 AppImage (Raspberry Pi)
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── Checkout ──────────────────────────────────────────────────────────────
+      - uses: actions/checkout@v4
+
+      # ── Node 20 ───────────────────────────────────────────────────────────────
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # ── QEMU so we can build / pack for arm64 on an x86_64 runner ─────────────
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      # ── Libs the AppImage tooling pulls in during pack ────────────────────────
+      - name: Install host build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libfuse2 fuse rpm
+
+      # ── Install deps ──────────────────────────────────────────────────────────
+      - name: Install dependencies
+        run: npm install
+
+      # ── Mark this as a Pi build (skips party subsystem) ───────────────────────
+      - name: Write Pi build flags
+        run: node scripts/write-build-flags.js pi
+
+      # ── Smoke test (with NSTREAMS_PI=1 so it loads the noop party stub) ───────
+      - name: Smoke test
+        env:
+          NSTREAMS_PI: '1'
+        run: npm run smoke
+
+      # ── Build Vite frontend with VITE_PLATFORM=pi ─────────────────────────────
+      - name: Build web assets
+        env:
+          VITE_PLATFORM: 'pi'
+        run: npx vite build
+
+      # ── Pack the AppImage via electron-builder ────────────────────────────────
+      - name: Build ARM64 AppImage
+        run: npx electron-builder --linux AppImage --arm64 --publish never
+
+      # ── Attach to the same release the Windows job creates ────────────────────
+      - name: Attach AppImage to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "N Streams ${{ github.ref_name }}"
+          generate_release_notes: true
+          files: release/N-Streams-*-arm64.AppImage
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -17,6 +17,10 @@ import PartySidebar from './party/PartySidebar';
 import WatchPartyModal from './party/WatchPartyModal';
 import api from './api';
 
+// Pi build flag — strips the Watch Party subsystem to save RAM on
+// constrained hardware (Pi 3B+ etc).
+const IS_PI = import.meta.env.VITE_PLATFORM === 'pi';
+
 export const AppContext = createContext(null);
 export const useApp = () => useContext(AppContext);
 
@@ -270,9 +274,16 @@ export default function App() {
 
   const isAndroid = !!window.Capacitor;
 
+  // Pi build strips the party subsystem entirely — no provider, no
+  // sidebar, no Watch Together modal. Saves the WebSocket connection
+  // + state RAM on constrained hardware.
+  const PartyWrap = IS_PI
+    ? ({ children }) => <>{children}</>
+    : PartyProvider;
+
   return (
     <AppContext.Provider value={ctx}>
-      <PartyProvider showToast={showToast}>
+      <PartyWrap showToast={showToast}>
         <div className={`flex flex-col h-screen w-screen bg-bg tv-edge ${isAndroid ? 'tv-mode' : ''}`}>
           <TopNav page={page} setPage={setPage} searchRef={searchRef} />
 
@@ -335,14 +346,14 @@ export default function App() {
             />
           )}
 
-          {partyModalContentId !== null && (
+          {!IS_PI && partyModalContentId !== null && (
             <WatchPartyModal
               contentId={partyModalContentId}
               onClose={() => setPartyModalContentId(null)}
             />
           )}
 
-          <PartySidebar />
+          {!IS_PI && <PartySidebar />}
 
           {toast && (
             <div className="fixed bottom-6 right-6 surface-glass text-white px-5 py-3 rounded-full shadow-lg animate-fade z-[100] font-medium text-sm border border-accent/30">
@@ -353,7 +364,7 @@ export default function App() {
           {/* First-run tutorial for new crew members */}
           <TutorialOverlay username={activeUser?.username} />
         </div>
-      </PartyProvider>
+      </PartyWrap>
     </AppContext.Provider>
   );
 }

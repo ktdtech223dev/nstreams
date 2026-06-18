@@ -27,7 +27,15 @@ const https = require('https');
 const Store = require('electron-store');
 const store = new Store();
 const { startServer, getResolvedPort } = require('./server/index');
-const party = require('./party');
+
+// Pi (and other stripped) builds skip the Watch Party / WebSocket
+// relay subsystem to save RAM. Selected via electron/build-flags.json
+// (generated at build time) or NSTREAMS_PI=1 env var.
+const buildFlags = (() => {
+  try { return require('./build-flags.json'); } catch { return {}; }
+})();
+const PI_BUILD = buildFlags.pi || process.env.NSTREAMS_PI === '1';
+const party = PI_BUILD ? require('./party-noop') : require('./party');
 const adblocker = require('./adblocker');
 
 // Lock to a single running instance BEFORE anything else touches the port.
