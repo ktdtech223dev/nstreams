@@ -26,8 +26,14 @@ jobs:
       - name: Build Kodi addon + repository zips
         run: |
           mkdir -p kodi-addon/release
-          PLUGIN_VERSION=$(grep -oE 'version="[0-9.]+"' kodi-addon/addon.xml | head -1 | cut -d'"' -f2)
-          REPO_VERSION=$(grep -oE 'version="[0-9.]+"' kodi-repo/repository.nstreams/addon.xml | head -1 | cut -d'"' -f2)
+          # Skip line 1 — it's <?xml version="1.0"...?> which the
+          # bare /version="[0-9.]+"/ regex matches first.
+          PLUGIN_VERSION=$(tail -n +2 kodi-addon/addon.xml | grep -oE 'version="[0-9.]+"' | head -1 | cut -d'"' -f2)
+          REPO_VERSION=$(tail -n +2 kodi-repo/repository.nstreams/addon.xml | grep -oE 'version="[0-9.]+"' | head -1 | cut -d'"' -f2)
+          if [[ ! "$PLUGIN_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Plugin version $PLUGIN_VERSION is not X.Y.Z — Kodi repo install will 404" >&2
+            exit 1
+          fi
 
           # plugin.video.nstreams-<plugin_version>.zip
           cp -r kodi-addon /tmp/plugin.video.nstreams
