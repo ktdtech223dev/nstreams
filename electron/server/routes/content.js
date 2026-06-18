@@ -2,7 +2,10 @@ const express = require('express');
 const { getDB } = require('../database');
 const tmdb = require('../tmdb');
 const scrapers = require('../scrapers');
+const { PROVIDERS } = require('../scrapers');
 const { deepLinkFor, loginUrlFor, requiresDrm } = require('../deeplinks');
+
+const STREAM_PROVIDERS = ['miruro', 'vidsrc', 'embedsu'];
 
 const router = express.Router();
 
@@ -402,6 +405,94 @@ router.get('/scrape/availability/:contentId', async (req, res) => {
 router.post('/scrape/clear-cache', (req, res) => {
   SCRAPE_CACHE.clear();
   res.json({ ok: true });
+});
+
+// Server-side stream extraction — hands raw HLS URLs back to the
+// caller (Kodi inputstream.adaptive, or any client that prefers
+// native playback over embedding an iframe). Falls back to the
+// embed URL when extraction fails so the client can still iframe.
+const STREAM_CACHE = new Map();
+// Short TTL: HLS URLs from these providers typically expire 1-5 min after
+// issue, and the cache is unscoped per user — long TTLs amplify any
+// poisoned response. embedsu's internal cache is also 5 min; matching that.
+const STREAM_TTL = 5 * 60 * 1000;
+
+// GET /api/stream/:provider?content_id=X&season=Y&episode=Z
+router.get('/stream/:provider', async (req, res) => {
+  try {
+    const { provider } = req.params;
+    if (!STREAM_PROVIDERS.includes(provider)) {
+      return res.status(400).json({ error: `Unknown provider. Expected one of ${STREAM_PROVIDERS.join(', ')}` });
+    }
+
+    const { content_id } = req.query;
+    if (!content_id) return res.status(400).json({ error: 'content_id required' });
+
+    const db = getDB();
+    const content = db.prepare('SELECT * FROM content WHERE id = ?').get(content_id);
+    if (!content) return res.status(404).json({ error: 'Content not found' });
+
+    const season = parseInt(req.query.season) || 1;
+    const episode = parseInt(req.query.episode) || 1;
+
+    // Build the embed URL up-front so it's available for the
+    // fallback branch on extractor failure.
+    const isMovie = content.type === 'movie';
+    let fallback_embed_url = null;
+    if (provider === 'miruro') {
+      if (content.anilist_id) fallback_embed_url = PROVIDERS.miruro(content.anilist_id);
+    } else if (provider === 'vidsrc' && content.tmdb_id) {
+      fallback_embed_url = isMovie
+        ? PROVIDERS.vidsrc.movie(content.tmdb_id)
+        : PROVIDERS.vidsrc.tv(content.tmdb_id, season, episode);
+    } else if (provider === 'embedsu' && content.tmdb_id) {
+      fallback_embed_url = isMovie
+        ? PROVIDERS.embedsu.movie(content.tmdb_id)
+        : PROVIDERS.embedsu.tv(content.tmdb_id, season, episode);
+    }
+
+    const cacheKey = `${provider}:${content_id}:${season}:${episode}`;
+    const cached = STREAM_CACHE.get(cacheKey);
+    if (cached && Date.now() - cached.ts < STREAM_TTL) {
+      return res.json({ ...cached.data, cached: true });
+    }
+
+    try {
+      const extractor = require('../extractors/' + provider);
+      const result = await extractor.extract(content, season, episode);
+      const payload = {
+        ok: true,
+        stream_url: result.stream_url,
+        headers: result.headers || {},
+        subtitles: result.subtitles || [],
+        // site_url is the embed page the extractor walked. Sessions are
+        // logged with this so the activity feed shows a clickable origin
+        // instead of a raw .m3u8.
+        site_url: fallback_embed_url,
+        provider,
+        cached: false
+      };
+      STREAM_CACHE.set(cacheKey, { ts: Date.now(), data: payload });
+      res.json(payload);
+    } catch (extractErr) {
+      // Don't 500 — clients can still iframe the embed URL when
+      // native extraction fails (anti-bot, layout change, etc.).
+      res.json({
+        ok: false,
+        error: extractErr.message,
+        fallback_embed_url,
+        provider
+      });
+    }
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/stream/clear-cache — flush poisoned/stale stream URLs
+router.post('/stream/clear-cache', (req, res) => {
+  STREAM_CACHE.clear();
+  res.json({ ok: true, cleared: true });
 });
 
 // POST /api/scrape/hide — hide a bad result for a specific show

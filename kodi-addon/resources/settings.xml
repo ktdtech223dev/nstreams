@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<settings version="2">
+    <section id="nstreams">
+        <category id="general" label="30030" help="">
+            <group id="1" label="30030">
+                <setting id="active_user_id" type="integer" label="30007" help="">
+                    <level>0</level>
+                    <default>0</default>
+                    <constraints>
+                        <minimum>0</minimum>
+                        <step>1</step>
+                        <maximum>99</maximum>
+                    </constraints>
+                    <control type="slider" format="integer">
+                        <popup>false</popup>
+                    </control>
+                </setting>
+                <setting id="active_user_name" type="string" label="30032" help="">
+                    <level>0</level>
+                    <default></default>
+                    <control type="label"/>
+                </setting>
+                <setting id="backend_url" type="string" label="30008" help="">
+                    <level>0</level>
+                    <default>https://nstreams-api-production.up.railway.app</default>
+                    <constraints>
+                        <allowempty>false</allowempty>
+                    </constraints>
+                    <control type="edit" format="string">
+                        <heading>30008</heading>
+                    </control>
+                </setting>
+            </group>
+        </category>
+        <category id="playback" label="30031" help="">
+            <group id="1" label="30031">
+                <setting id="preferred_source" type="string" label="30009" help="">
+                    <level>0</level>
+                    <default>auto</default>
+                    <constraints>
+                        <options>
+                            <option label="auto">auto</option>
+                            <option label="miruro">miruro</option>
+                            <option label="vidsrc">vidsrc</option>
+                            <option label="embedsu">embedsu</option>
+                        </options>
+                    </constraints>
+                    <control type="list" format="string">
+                        <heading>30009</heading>
+                    </control>
+                </setting>
+                <setting id="allow_chromium_fallback" type="boolean" label="30010" help="">
+                    <level>0</level>
+                    <default>true</default>
+                    <control type="toggle"/>
+                </setting>
+            </group>
+        </category>
+    </section>
+</settings>

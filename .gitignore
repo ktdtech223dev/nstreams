@@ -11,3 +11,6 @@ package-lock.json
 relay/package-lock.json
 discord-bot/.tok
 electron/build-flags.json
+__pycache__/
+*.pyc
+kodi-addon/release/

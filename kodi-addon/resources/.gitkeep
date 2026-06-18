@@ -1,0 +1,16 @@
+# Asset placeholder directory — kept in git via this .gitkeep file.
+#
+# Drop the following Kodi 21 (Omega) addon artwork into this directory
+# (resources/) before packaging the addon:
+#
+#   icon.png    — 256x256 px, PNG with transparency, addon launcher icon.
+#                 Referenced from addon.xml as:
+#                   <assets><icon>resources/icon.png</icon></assets>
+#
+#   fanart.jpg  — 1280x720 px, JPEG, full-bleed background art shown in
+#                 the addon browser and on plugin root.
+#                 Referenced from addon.xml as:
+#                   <assets><fanart>resources/fanart.jpg</fanart></assets>
+#
+# Keep both files under ~500 KB combined so the addon stays lightweight
+# on the Raspberry Pi 3B+ target (~380 MB total install budget).

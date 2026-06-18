@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<addon
+    id="plugin.video.nstreams"
+    name="N Streams"
+    version="1.0.0"
+    provider-name="N Games Crew">
+
+    <requires>
+        <import addon="xbmc.python" version="3.0.0"/>
+        <import addon="inputstream.adaptive" version="21.0.0" optional="false"/>
+    </requires>
+
+    <extension point="xbmc.python.pluginsource" library="addon.py">
+        <provides>video</provides>
+    </extension>
+
+    <extension point="xbmc.service" library="service.py" start="login"/>
+
+    <extension point="xbmc.addon.metadata">
+        <summary lang="en_GB">N Streams — movies and TV via HLS</summary>
+        <summary lang="en">N Streams — movies and TV via HLS</summary>
+        <description lang="en_GB">N Streams is a video plugin for Kodi 21 (Omega) that aggregates publicly available HLS sources and plays them through InputStream Adaptive. Browse movies and TV shows, search across providers, and stream with proper header forwarding for protected manifests and segments.</description>
+        <description lang="en">N Streams is a video plugin for Kodi 21 (Omega) that aggregates publicly available HLS sources and plays them through InputStream Adaptive. Browse movies and TV shows, search across providers, and stream with proper header forwarding for protected manifests and segments.</description>
+        <disclaimer lang="en_GB">The authors are not responsible for the content provided by third-party sources.</disclaimer>
+        <disclaimer lang="en">The authors are not responsible for the content provided by third-party sources.</disclaimer>
+        <license>MIT</license>
+        <language>en</language>
+        <platform>all</platform>
+        <forum></forum>
+        <website></website>
+        <source></source>
+        <news>
+v1.0.0 (2026-06-18)
+- Initial release of N Streams for Kodi 21 (Omega).
+- HLS playback via InputStream Adaptive 21.x with manifest and segment header forwarding.
+- Browse, search, and play movies and TV episodes from supported public sources.
+- Resume and watched-state tracking via Kodi's library hooks.
+        </news>
+        <assets>
+            <icon>resources/icon.png</icon>
+            <fanart>resources/fanart.jpg</fanart>
+        </assets>
+    </extension>
+</addon>

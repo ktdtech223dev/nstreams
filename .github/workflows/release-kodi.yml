@@ -1,0 +1,42 @@
+name: Build & Release Kodi Addon (plugin.video.nstreams)
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── Checkout ──────────────────────────────────────────────────────────────
+      - uses: actions/checkout@v4
+
+      # ── Package the Kodi addon as plugin.video.nstreams-<version>.zip ─────────
+      #
+      # Kodi 21 (Omega) requires the zip to contain a single top-level folder
+      # whose name matches the addon id. We copy kodi-addon/ → /tmp/plugin.video
+      # .nstreams/ so the archive root is correct, strip build-only artifacts
+      # (release/, .github/), then zip from /tmp so the path inside the archive
+      # stays clean.
+      - name: Build Kodi addon zip
+        run: |
+          mkdir -p kodi-addon/release
+          cd kodi-addon && VERSION=$(grep -oE 'version="[0-9.]+"' addon.xml | head -1 | cut -d'"' -f2) && cd ..
+          cp -r kodi-addon /tmp/plugin.video.nstreams
+          rm -rf /tmp/plugin.video.nstreams/release /tmp/plugin.video.nstreams/.github
+          (cd /tmp && zip -r "$GITHUB_WORKSPACE/kodi-addon/release/plugin.video.nstreams-${VERSION}.zip" plugin.video.nstreams)
+
+      # ── Attach to the same release the Windows / Linux jobs create ────────────
+      - name: Attach Kodi addon zip to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "N Streams ${{ github.ref_name }}"
+          generate_release_notes: true
+          files: kodi-addon/release/plugin.video.nstreams-*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
