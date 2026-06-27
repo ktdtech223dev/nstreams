@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<addon
+    id="plugin.video.nstreams"
+    name="N Streams"
+    version="1.0.5"
+    provider-name="N Games Crew">
+
+    <requires>
+        <import addon="xbmc.python" version="3.0.0"/>
+        <import addon="inputstream.adaptive" version="21.0.0" optional="false"/>
+        <!-- script.module.resolveurl is NEEDED for playback (the goojara
+             provider returns hoster landing pages; ResolveURL cracks
+             them). Marked OPTIONAL so the addon still installs cleanly
+             on Kodi instances that don't have the Gujal repo yet —
+             catalog / profile / activity tracking all work without it,
+             only the play action degrades to a clean "Could not resolve
+             stream" toast (see playback.py:_resolve_hoster). Once the
+             user installs the Gujal repo (https://gujal00.github.io/repos/),
+             Kodi auto-pulls ResolveURL on the next addon update. -->
+        <import addon="script.module.resolveurl" version="5.1.0" optional="true"/>
+    </requires>
+
+    <extension point="xbmc.python.pluginsource" library="addon.py">
+        <provides>video</provides>
+    </extension>
+
+    <!-- start="startup" launches the service AFTER GUI is up but
+         BEFORE login, which avoids the in-place-upgrade trap where a
+         start="login" service holds the addon dir open at exactly the
+         moment Install-from-zip needs to swap files. -->
+    <extension point="xbmc.service" library="service.py" start="startup"/>
+
+    <extension point="xbmc.addon.metadata">
+        <summary lang="en_GB">N Streams — movies and TV via HLS</summary>
+        <summary lang="en">N Streams — movies and TV via HLS</summary>
+        <description lang="en_GB">N Streams is a video plugin for Kodi 21 (Omega) that aggregates publicly available HLS sources and plays them through InputStream Adaptive. Browse movies and TV shows, search across providers, and stream with proper header forwarding for protected manifests and segments.</description>
+        <description lang="en">N Streams is a video plugin for Kodi 21 (Omega) that aggregates publicly available HLS sources and plays them through InputStream Adaptive. Browse movies and TV shows, search across providers, and stream with proper header forwarding for protected manifests and segments.</description>
+        <disclaimer lang="en_GB">The authors are not responsible for the content provided by third-party sources.</disclaimer>
+        <disclaimer lang="en">The authors are not responsible for the content provided by third-party sources.</disclaimer>
+        <license>MIT</license>
+        <language>en</language>
+        <platform>all</platform>
+        <forum></forum>
+        <website></website>
+        <source></source>
+        <news>
+v1.0.5 (2026-06-18)
+- Pi-local goojara extractor (kodi-addon/lib/extractors/goojara.py).
+  Scrapes directly from the Pi's residential IP so Cloudflare's
+  data-center-IP gate on Railway no longer blocks playback. Falls
+  through to Railway if the local path fails.
+- Exact normalized title match preferred over fuzzy similarity —
+  "The Boys" no longer accidentally pairs with "TallBoyz (2019)".
+v1.0.4 (2026-06-18)
+- script.module.resolveurl import is now OPTIONAL so the addon installs
+  on Kodi instances without the Gujal repo. Playback still requires it;
+  install the Gujal repo to enable.
+v1.0.3 (2026-06-18)
+- Pivot to goojara as the live source provider (embed.su parked,
+  vidsrc Turnstile-walled, miruro JWE-encrypted — all unworkable).
+- script.module.resolveurl now a hard dependency: hosts the per-session
+  hoster URL crack (doodstream / luluvdo / wootly / streamplay).
+- Playback branches on container: MP4 from hosters uses Kodi's default
+  ffmpeg player; .m3u8 stays on inputstream.adaptive.
+- Backend goojara extractor: in-flight dedupe, parallel A-Z page batches,
+  stale-slug invalidation with one-shot retry.
+v1.0.0 (2026-06-18)
+- Initial release of N Streams for Kodi 21 (Omega).
+- HLS playback via InputStream Adaptive 21.x with manifest and segment header forwarding.
+- Browse, search, and play movies and TV episodes from supported public sources.
+- Resume and watched-state tracking via Kodi's library hooks.
+        </news>
+        <assets>
+            <icon>resources/icon.png</icon>
+            <fanart>resources/fanart.jpg</fanart>
+        </assets>
+    </extension>
+</addon>
