@@ -761,11 +761,32 @@ ipcMain.handle('install-update', async (_, { downloadUrl }) => {
   // launched is exposed via PORTABLE_EXECUTABLE_FILE. Fall back to
   // execPath when running from a proper install (not portable).
   const exePath = process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
-  const dir = path.dirname(exePath);
-  const name = path.basename(exePath);
-  const updatePath = path.join(dir, `${name}.update.exe`);
-  const batPath = path.join(dir, 'nstreams-updater.bat');
-  const logPath = path.join(dir, 'nstreams-updater.log');
+  const dir     = path.dirname(exePath);
+  const oldName = path.basename(exePath);
+
+  // The portable artifact name embeds the version (N-Streams-<ver>-portable.exe),
+  // so every release has a DIFFERENT filename. Trying to delete+replace the
+  // *running* portable exe in place is unreliable — the portable launcher stub
+  // keeps the original file locked, so the swap silently never completes.
+  //
+  // Robust approach: download the new exe SIDE-BY-SIDE under its real (new)
+  // name, verify it, launch it, then delete the old exe. We never move or
+  // overwrite a locked, running file. (If the new asset happens to share the
+  // current filename — e.g. a same-version reinstall — fall back to an in-place
+  // swap.)
+  let newName = oldName;
+  try {
+    const seg = decodeURIComponent((new URL(downloadUrl).pathname.split('/').pop()) || '');
+    if (/\.exe$/i.test(seg)) newName = seg;
+  } catch {}
+  const sideBySide = newName.toLowerCase() !== oldName.toLowerCase();
+
+  const newPath    = path.join(dir, newName);
+  const partPath   = path.join(dir, `${newName}.part`);
+  const updatePath = path.join(dir, `${oldName}.update.exe`); // in-place fallback target
+  const dlTarget   = sideBySide ? partPath : updatePath;
+  const batPath    = path.join(dir, 'nstreams-updater.bat');
+  const logPath    = path.join(dir, 'nstreams-updater.log');
 
   // Send progress events to renderer
   const send = (event, payload) => {
@@ -774,67 +795,120 @@ ipcMain.handle('install-update', async (_, { downloadUrl }) => {
     }
   };
 
-  // 1. Download
+  // 1. Download to a temp file, verifying the full length arrives
   await new Promise((resolve, reject) => {
     const follow = (url, redirects = 0) => {
       if (redirects > 5) return reject(new Error('Too many redirects'));
       const { get } = url.startsWith('https:') ? require('https') : require('http');
       get(url, { headers: { 'User-Agent': `NStreams/${app.getVersion()}` } }, (res) => {
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          res.resume();
           return follow(res.headers.location, redirects + 1);
         }
         if (res.statusCode !== 200) {
+          res.resume();
           return reject(new Error(`Download failed: HTTP ${res.statusCode}`));
         }
         const total = parseInt(res.headers['content-length']) || 0;
         let loaded = 0;
-        const out = fs.createWriteStream(updatePath);
+        const out = fs.createWriteStream(dlTarget);
         res.on('data', (chunk) => {
           loaded += chunk.length;
           send('progress', { loaded, total, percent: total ? Math.round(loaded * 100 / total) : 0 });
         });
         res.pipe(out);
-        out.on('finish', () => out.close(resolve));
+        out.on('finish', () => out.close(() => {
+          if (total && loaded !== total) {
+            try { fs.unlinkSync(dlTarget); } catch {}
+            return reject(new Error(`Download incomplete: ${loaded} of ${total} bytes`));
+          }
+          resolve();
+        }));
         out.on('error', reject);
       }).on('error', reject);
     };
     follow(downloadUrl);
   });
 
-  send('downloaded', { path: updatePath });
+  // Verify it's actually a Windows executable (MZ header) before we hand off
+  const sig = Buffer.alloc(2);
+  try {
+    const fd = fs.openSync(dlTarget, 'r');
+    fs.readSync(fd, sig, 0, 2, 0);
+    fs.closeSync(fd);
+  } catch (e) {
+    throw new Error('Could not read downloaded file: ' + e.message);
+  }
+  if (sig[0] !== 0x4d || sig[1] !== 0x5a) {
+    try { fs.unlinkSync(dlTarget); } catch {}
+    throw new Error('Downloaded file is not a valid executable (wrong URL or release has no exe asset)');
+  }
 
-  // 2. Write updater batch
-  // Logs every step to nstreams-updater.log next to the exe so failures
+  // In side-by-side mode, promote the verified .part to its real name now
+  if (sideBySide) {
+    try { fs.rmSync(newPath, { force: true }); } catch {}
+    fs.renameSync(partPath, newPath);
+  }
+
+  send('downloaded', { path: sideBySide ? newPath : updatePath });
+
+  // 2. Write the updater batch. Logs every step next to the exe so failures
   // are debuggable. "ping -n" gives us a portable sleep.
-  const bat = `@echo off
+  const bat = sideBySide ? `@echo off
 setlocal enableextensions
 chcp 65001 >NUL
 set "LOG=${logPath}"
-> "%LOG%" echo [%DATE% %TIME%] N Streams updater starting
-echo   exePath   = ${exePath} >> "%LOG%"
-echo   updatePath = ${updatePath} >> "%LOG%"
+> "%LOG%" echo [%DATE% %TIME%] N Streams updater (side-by-side) starting
+echo   oldExe = ${exePath} >> "%LOG%"
+echo   newExe = ${newPath} >> "%LOG%"
 echo Waiting for app to exit... >> "%LOG%"
 
-:: Wait up to 20s for the running app to release the file
+:: Wait up to ~30s for the old app to fully exit (so the relaunch is clean and
+:: the old file unlocks). Deleting it is also how we detect it's released.
+set /a tries=0
+:wait_loop
+ping -n 2 127.0.0.1 >NUL
+del "${exePath}" 2>NUL
+if not exist "${exePath}" goto launch
+set /a tries=tries+1
+if %tries% LSS 15 goto wait_loop
+echo WARNING: old exe still locked after ~30s — launching new build anyway >> "%LOG%"
+
+:launch
+echo Launching ${newPath} >> "%LOG%"
+start "" "${newPath}"
+del "${exePath}" 2>NUL
+echo Done. >> "%LOG%"
+
+:: Self-delete
+(goto) 2>NUL & del "%~f0"
+` : `@echo off
+setlocal enableextensions
+chcp 65001 >NUL
+set "LOG=${logPath}"
+> "%LOG%" echo [%DATE% %TIME%] N Streams updater (in-place) starting
+echo   exePath = ${exePath} >> "%LOG%"
+echo Waiting for app to exit... >> "%LOG%"
+
 set /a tries=0
 :wait_loop
 ping -n 2 127.0.0.1 >NUL
 del "${exePath}" 2>NUL
 if not exist "${exePath}" goto swap
 set /a tries=tries+1
-if %tries% LSS 10 goto wait_loop
-echo WARNING: exe still locked after 20s — trying move anyway >> "%LOG%"
+if %tries% LSS 15 goto wait_loop
+echo WARNING: exe still locked after ~30s — trying move anyway >> "%LOG%"
 
 :swap
 echo Moving update into place... >> "%LOG%"
 move /y "${updatePath}" "${exePath}" >> "%LOG%" 2>&1
 if errorlevel 1 (
   echo ERROR: move failed. Update exe left at ${updatePath} >> "%LOG%"
-  echo Open the log: %LOG% > "${updatePath}.INSTALL_FAILED.txt"
+  echo Could not install update. See ${logPath} > "${updatePath}.INSTALL_FAILED.txt"
   exit /b 1
 )
 
-echo Launching new version: ${exePath} >> "%LOG%"
+echo Launching ${exePath} >> "%LOG%"
 start "" "${exePath}"
 echo Done. >> "%LOG%"
 
@@ -844,7 +918,7 @@ echo Done. >> "%LOG%"
   fs.writeFileSync(batPath, bat, 'utf8');
 
   // 3. Spawn detached + quit. Show the cmd window so users see activity
-  // (and can read error text if swap fails).
+  // (and can read error text if something goes wrong).
   const child = spawn('cmd.exe', ['/c', batPath], {
     detached: true,
     stdio: 'ignore',
