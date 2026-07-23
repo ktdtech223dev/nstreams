@@ -86,6 +86,24 @@ async function createWindow() {
     }
   });
 
+  // ── True fullscreen: hide the TopNav-based custom titlebar and take
+  //    over the whole screen. Renderer subscribes to `fullscreen-changed`
+  //    via preload and unmounts TopNav when isFullscreen=true.
+  //    ESC exits fullscreen (Electron doesn't do this for window
+  //    fullscreen by default — only for HTML5 element.requestFullscreen).
+  mainWindow.on('enter-full-screen', () => {
+    mainWindow.webContents.send('fullscreen-changed', true);
+  });
+  mainWindow.on('leave-full-screen', () => {
+    mainWindow.webContents.send('fullscreen-changed', false);
+  });
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type === 'keyDown' && input.key === 'Escape' && mainWindow.isFullScreen()) {
+      mainWindow.setFullScreen(false);
+      event.preventDefault();
+    }
+  });
+
   const isDev = process.env.NODE_ENV === 'development';
   // Pass the resolved API port to the renderer via query so api.js can find it.
   const query = `?apiPort=${apiPort}&version=${encodeURIComponent(app.getVersion())}`;
@@ -132,6 +150,13 @@ ipcMain.handle('maximize', () => {
   mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize();
 });
 ipcMain.handle('close', () => mainWindow?.close());
+ipcMain.handle('is-fullscreen', () => !!mainWindow?.isFullScreen());
+ipcMain.handle('toggle-fullscreen', () => {
+  if (!mainWindow) return false;
+  const next = !mainWindow.isFullScreen();
+  mainWindow.setFullScreen(next);
+  return next;
+});
 ipcMain.handle('get-store', (_, key) => store.get(key));
 ipcMain.handle('set-store', (_, key, val) => store.set(key, val));
 ipcMain.handle('get-active-user', () => store.get('active_user_id', 1));

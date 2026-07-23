@@ -171,6 +171,8 @@ def build_home(handle, api):
          url_for('watchlist', status='all')),
         ('Plan to Watch',     'Saved for later',
          url_for('watchlist', status='plan_to_watch')),
+        ('Sports',            'Live games + 24/7 sports channels',
+         url_for('sports_home')),
         ('Search',            'Find any title',
          url_for('search')),
         ('Settings',          'Backend URL, playback options',
@@ -329,6 +331,20 @@ def build_seasons(handle, api, content_id):
 
 # ─── Build: episodes (TV — TMDB) ──────────────────────────────
 
+def _spoilers_hidden():
+    """Read the addon-wide hide_spoilers toggle. Defaults ON — the
+    setting is opt-out because 'don't spoil me' is the safer default
+    for a shared crew catalog where the next viewer might be a season
+    behind. Safe to call from any build_* helper."""
+    try:
+        import xbmcaddon
+        val = xbmcaddon.Addon().getSetting('hide_spoilers')
+        # getSetting returns 'true'/'false' as strings on Kodi 21.
+        return val is None or val == '' or val.lower() in ('true', '1', 'yes')
+    except Exception:
+        return True
+
+
 def build_episodes(handle, api, content_id, season):
     """Episode list for a single TV season.
 
@@ -344,6 +360,28 @@ def build_episodes(handle, api, content_id, season):
     show_title = content.get('title') or 'Show'
     fanart = _img(content.get('backdrop_path'), size='w780')
 
+    # Spoiler gate — anything strictly past the current episode gets
+    # its still + name + plot hidden. The watchlist row carries
+    # current_season/current_episode from the backend so we know where
+    # the user actually is; when the show is on a later season entirely,
+    # every episode of the season we're looking at is future.
+    hide_spoilers = _spoilers_hidden()
+    wl = content.get('watchlist') or {}
+    cur_season = int(wl.get('current_season') or 0)
+    cur_episode = int(wl.get('current_episode') or 0)
+
+    def is_future_ep(n):
+        if not hide_spoilers:
+            return False
+        if cur_season == 0:  # never watched — show first episode, hide rest
+            return int(n) > 1
+        if season < cur_season:
+            return False  # earlier season — user already past it
+        if season > cur_season:
+            return True   # later season — everything is future
+        # same season: hide everything strictly past current_episode
+        return int(n) > cur_episode
+
     xbmcplugin.setPluginCategory(handle, '{} · Season {}'.format(show_title, season))
     xbmcplugin.setContent(handle, 'episodes')
 
@@ -351,31 +389,53 @@ def build_episodes(handle, api, content_id, season):
         ep_num = ep.get('episode_number')
         if ep_num is None:
             continue
+        future = is_future_ep(ep_num)
         ep_name = ep.get('name') or 'Episode {}'.format(ep_num)
-        label = '{:d}. {}'.format(int(ep_num), ep_name)
+        if future:
+            # Neutral label reveals nothing about the plot / guest star /
+            # title reveal that TV writers love to bury spoilers in.
+            display_name = 'Episode {}'.format(int(ep_num))
+            label = '{:d}. {}'.format(int(ep_num), display_name)
+        else:
+            display_name = ep_name
+            label = '{:d}. {}'.format(int(ep_num), ep_name)
 
         li = xbmcgui.ListItem(label=label, offscreen=True)
 
         # Prefer the large still (TMDB w780) for thumb; fall back to
-        # the smaller one or the season poster.
-        thumb = (_img(ep.get('still_path_large'), size='w780')
-                 or _img(ep.get('still_path'))
-                 or _img(content.get('poster_path')))
-        _set_art(
-            li,
-            poster=_img(content.get('poster_path')),
-            thumb=thumb,
-            fanart=fanart,
-        )
+        # the smaller one or the season poster. Future episodes skip
+        # the still entirely — Kodi will show the fanart / poster
+        # which is safe show-level art.
+        if future:
+            _set_art(
+                li,
+                poster=_img(content.get('poster_path')),
+                thumb=_img(content.get('poster_path')),
+                fanart=fanart,
+            )
+        else:
+            thumb = (_img(ep.get('still_path_large'), size='w780')
+                     or _img(ep.get('still_path'))
+                     or _img(content.get('poster_path')))
+            _set_art(
+                li,
+                poster=_img(content.get('poster_path')),
+                thumb=thumb,
+                fanart=fanart,
+            )
 
         runtime_min = ep.get('runtime')
         duration_s = int(runtime_min) * 60 if runtime_min else None
 
+        plot = (ep.get('overview') if not future
+                else 'Spoiler hidden — disable in Settings')
         _set_video_info(
             li,
-            title=ep_name,
-            plot=ep.get('overview'),
-            rating=ep.get('rating'),
+            title=display_name,
+            plot=plot,
+            # Rating leaks info about whether an episode "was good" —
+            # a spike on E7 is itself a spoiler ("the big one"). Hide.
+            rating=None if future else ep.get('rating'),
             duration=duration_s,
             premiered=ep.get('air_date'),
             season=season,
@@ -671,5 +731,256 @@ def build_search(handle, api, query):
             title=title,
         )
         _add_directory(handle, url=url, li=li, is_folder=True)
+
+    xbmcplugin.endOfDirectory(handle, succeeded=True, cacheToDisc=False)
+
+
+# ─── Build: sports ────────────────────────────────────────────
+
+# Sports pipeline overview:
+#   sports_home        → 3 folder rows (Live Now / 24/7 / Upcoming)
+#   sports_live        → /api/sports  → status="live" events
+#   sports_channels    → /api/sports/dlhd/channels → 24/7 DaddyLive channels
+#   sports_upcoming    → /api/sports  → status="upcoming" events
+#
+# Live and channel rows resolve via playback.play_sports() which routes
+# through the local dlhd extractor. Upcoming rows are non-playable — a
+# click opens an info dialog with the event time (they'd 404 the extractor
+# anyway).
+#
+# There is no TMDB row for a live game, so these rows carry `mediatype='video'`
+# (the most permissive Kodi content class) instead of movie/tvshow — Kodi
+# skips scraper lookups on 'video' items, which is exactly what we want.
+
+
+def build_sports_home(handle, api):
+    """Root of the Sports section — three category folders."""
+    xbmcplugin.setPluginCategory(handle, 'Sports')
+    xbmcplugin.setContent(handle, 'videos')
+
+    entries = [
+        ('Live Now',       'Games and matches happening right now',
+         url_for('sports_live')),
+        ('24/7 Channels',  'Always-on sports channels via DaddyLive',
+         url_for('sports_channels')),
+        ('Upcoming',       'Kickoff times for the next few days',
+         url_for('sports_upcoming')),
+    ]
+    for label, plot, url in entries:
+        li = _new_item(label, plot=plot)
+        _add_directory(handle, url=url, li=li, is_folder=True)
+
+    xbmcplugin.endOfDirectory(handle, succeeded=True, cacheToDisc=False)
+
+
+def _format_start_time(iso):
+    """Best-effort ISO-8601 → local 'DoW HH:MM' for the Upcoming label.
+    Return the raw string if parsing fails — an unparsable time is still
+    more useful than nothing on the row."""
+    if not iso:
+        return ''
+    try:
+        from datetime import datetime
+        # Python 3.11+ handles the trailing 'Z' natively; 3.9-3.10 does
+        # not, so normalise. Kodi 21's bundled Python is 3.11.
+        s = iso.replace('Z', '+00:00')
+        dt = datetime.fromisoformat(s)
+        # Convert UTC → local by dropping tzinfo through astimezone().
+        local = dt.astimezone()
+        return local.strftime('%a %H:%M')
+    except Exception:
+        return iso
+
+
+def _sports_row(ev, *, playable):
+    """Shape a Sports ListItem from an /api/sports event row.
+
+    Kept as a helper so Live and Upcoming render identically apart from
+    the playability flag — otherwise the two builders would drift.
+    """
+    title = ev.get('title') or 'Live event'
+    league = ev.get('league') or ev.get('leagueId') or ''
+    label_bits = [title]
+    if league:
+        label_bits.append(league)
+    if not playable:
+        # Upcoming rows carry the kickoff time in the label so the user
+        # can scan the list without opening each one.
+        t = _format_start_time(ev.get('startTime'))
+        if t:
+            label_bits.append(t)
+    label = '  ·  '.join(label_bits)
+
+    li = xbmcgui.ListItem(label=label, offscreen=True)
+
+    plot_lines = []
+    if ev.get('subtitle'):
+        plot_lines.append(ev['subtitle'])
+    if ev.get('statusText'):
+        plot_lines.append(ev['statusText'])
+    if ev.get('score'):
+        plot_lines.append(ev['score'])
+    _set_video_info(
+        li,
+        title=title,
+        plot='\n'.join(plot_lines) or None,
+        mediatype='video',
+    )
+    li.setProperty('IsPlayable', 'true' if playable else 'false')
+    return li
+
+
+def build_sports_live(handle, api):
+    """Live-right-now events from the ESPN/OpenF1/WEC aggregate feed.
+
+    Rows route to play_sports if the event carries a DaddyLive channel/event
+    id (backend cross-match), and to play_sports_fallback (Chromium on the
+    LiveTV/WeakStreams URL the event ships with) otherwise. The dlhd match
+    is best-effort — most soccer/NBA rows currently have no match and go
+    straight to fallback.
+    """
+    xbmcplugin.setPluginCategory(handle, 'Sports · Live')
+    xbmcplugin.setContent(handle, 'videos')
+
+    events = api.get_sports() or []
+    live = [e for e in events if (e.get('status') or '').lower() == 'live']
+
+    if not live:
+        li = xbmcgui.ListItem(label='Nothing live right now', offscreen=True)
+        _set_video_info(
+            li,
+            title='Nothing live right now',
+            plot=('No games or matches were reported as in-progress by '
+                  'ESPN, OpenF1 or WEC. Check back closer to kickoff.'),
+        )
+        _add_directory(handle, url=url_for('noop'), li=li, is_folder=False)
+        xbmcplugin.endOfDirectory(handle, succeeded=True, cacheToDisc=False)
+        return
+
+    for ev in live:
+        li = _sports_row(ev, playable=True)
+
+        # Prefer a native DaddyLive match if the backend attached one.
+        # `dlhd_channel_id` (24/7 channel) or `dlhd_event_id` (per-event
+        # temp channel) are the two shapes we route to the extractor.
+        dlhd_channel = ev.get('dlhd_channel_id')
+        dlhd_event   = ev.get('dlhd_event_id')
+
+        if dlhd_channel or dlhd_event:
+            url = url_for(
+                'play_sports',
+                provider='dlhd',
+                channel_id=dlhd_channel,
+                event_id=dlhd_event,
+                title=ev.get('title'),
+            )
+        else:
+            # No dlhd cross-match — hand the event's first stream site
+            # (LiveTV / WeakStreams / NFLBite) to the Chromium fallback.
+            streams = ev.get('streams') or []
+            site = None
+            if streams and isinstance(streams[0], dict):
+                site = streams[0].get('url')
+            url = url_for(
+                'play_sports_fallback',
+                site_url=site,
+                title=ev.get('title'),
+            )
+
+        _add_directory(handle, url=url, li=li, is_folder=False)
+
+    xbmcplugin.endOfDirectory(handle, succeeded=True, cacheToDisc=False)
+
+
+def build_sports_channels(handle, api):
+    """24/7 DaddyLive channel list — no schedule, always-on feeds.
+
+    Backend returns [{id, name, ...}]. Every row resolves via the local
+    dlhd extractor (channel_id path) — no Chromium fallback for channels
+    because they're always available if the extractor is working, and if
+    it isn't, an embed page won't help either.
+    """
+    xbmcplugin.setPluginCategory(handle, 'Sports · 24/7 Channels')
+    xbmcplugin.setContent(handle, 'videos')
+
+    channels = api.get_sports_channels() or []
+    if not channels:
+        li = xbmcgui.ListItem(label='No channels available', offscreen=True)
+        _set_video_info(
+            li,
+            title='No channels available',
+            plot=('The DaddyLive channel index returned no rows. The '
+                  'source domain may have rotated — file an issue if this '
+                  'persists.'),
+        )
+        _add_directory(handle, url=url_for('noop'), li=li, is_folder=False)
+        xbmcplugin.endOfDirectory(handle, succeeded=True, cacheToDisc=False)
+        return
+
+    for ch in channels:
+        cid = ch.get('id') or ch.get('channel_id')
+        if cid is None:
+            continue
+        name = ch.get('name') or 'Channel {}'.format(cid)
+
+        li = xbmcgui.ListItem(label=name, offscreen=True)
+        _set_video_info(
+            li,
+            title=name,
+            plot='DaddyLive 24/7 channel · id {}'.format(cid),
+            mediatype='video',
+        )
+        li.setProperty('IsPlayable', 'true')
+
+        url = url_for(
+            'play_sports',
+            provider='dlhd',
+            channel_id=cid,
+            title=name,
+        )
+        _add_directory(handle, url=url, li=li, is_folder=False)
+
+    xbmcplugin.addSortMethod(handle, xbmcplugin.SORT_METHOD_LABEL_IGNORE_THE)
+    xbmcplugin.endOfDirectory(handle, succeeded=True, cacheToDisc=False)
+
+
+def build_sports_upcoming(handle, api):
+    """Upcoming events over the next 7-14 days. Non-playable.
+
+    Clicking a row opens an info dialog (see router action
+    `sports_upcoming_info`) with the event time — resolving a stream for
+    a not-yet-live event just 404s the extractor, so we head that off in
+    the UI instead of pretending it might work.
+    """
+    xbmcplugin.setPluginCategory(handle, 'Sports · Upcoming')
+    xbmcplugin.setContent(handle, 'videos')
+
+    events = api.get_sports() or []
+    up = [e for e in events if (e.get('status') or '').lower() == 'upcoming']
+
+    if not up:
+        li = xbmcgui.ListItem(label='No upcoming events', offscreen=True)
+        _set_video_info(
+            li,
+            title='No upcoming events',
+            plot=('Nothing on the calendar in the next 14 days. The '
+                  'aggregate feed only looks a week or two ahead.'),
+        )
+        _add_directory(handle, url=url_for('noop'), li=li, is_folder=False)
+        xbmcplugin.endOfDirectory(handle, succeeded=True, cacheToDisc=False)
+        return
+
+    for ev in up:
+        li = _sports_row(ev, playable=False)
+        url = url_for(
+            'sports_upcoming_info',
+            title=ev.get('title'),
+            subtitle=ev.get('subtitle') or ev.get('league') or '',
+            start=ev.get('startTime') or '',
+        )
+        # is_folder=False keeps this leaf; IsPlayable=false (set in
+        # _sports_row) tells Kodi to just invoke the URL — the router
+        # handler pops the dialog and closes.
+        _add_directory(handle, url=url, li=li, is_folder=False)
 
     xbmcplugin.endOfDirectory(handle, succeeded=True, cacheToDisc=False)

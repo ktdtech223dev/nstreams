@@ -22,6 +22,13 @@ contextBridge.exposeInMainWorld('electron', {
   minimize: () => ipcRenderer.invoke('minimize'),
   maximize: () => ipcRenderer.invoke('maximize'),
   close: () => ipcRenderer.invoke('close'),
+  isFullScreen: () => ipcRenderer.invoke('is-fullscreen'),
+  toggleFullScreen: () => ipcRenderer.invoke('toggle-fullscreen'),
+  onFullscreenChange: (cb) => {
+    const h = (_, v) => cb(v);
+    ipcRenderer.on('fullscreen-changed', h);
+    return () => ipcRenderer.removeListener('fullscreen-changed', h);
+  },
   getStore: (key) => ipcRenderer.invoke('get-store', key),
   setStore: (key, val) => ipcRenderer.invoke('set-store', key, val),
   getActiveUser: () => ipcRenderer.invoke('get-active-user'),

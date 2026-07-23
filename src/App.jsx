@@ -35,7 +35,41 @@ export default function App() {
   const [activeSessions, setActiveSessions] = useState([]);
   const [toast, setToast] = useState(null);
   const [androidUpdate, setAndroidUpdate] = useState(null);
+  // True fullscreen — hides the TopNav-based custom titlebar for the
+  // whole window. Wired to main.js `enter-full-screen` / `leave-full-
+  // screen` events; ESC exits fullscreen (handled in main.js
+  // before-input-event so it works even when nothing on the page has
+  // keyboard focus). Web-only fallback listens to the standard
+  // fullscreenchange event so behavior stays sane in dev / browser.
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  // Spoiler hider — blur the still + hide title/plot for any episode
+  // strictly past the user's current one. Default ON: "don't spoil me"
+  // is the safe default for a shared crew catalog. Persisted to
+  // localStorage so the toggle survives across sessions.
+  const [hideSpoilers, setHideSpoilersState] = useState(() => {
+    try {
+      const v = localStorage.getItem('nstreams:hide_spoilers');
+      return v === null ? true : v === 'true';
+    } catch { return true; }
+  });
+  const setHideSpoilers = (next) => {
+    setHideSpoilersState(next);
+    try { localStorage.setItem('nstreams:hide_spoilers', String(next)); } catch {}
+  };
   const searchRef = useRef(null);
+
+  useEffect(() => {
+    if (window.electron?.onFullscreenChange) {
+      // Hydrate initial state — the window could already be fullscreen
+      // when React mounts (e.g. after a reload).
+      window.electron.isFullScreen?.().then(setIsFullscreen).catch(() => {});
+      return window.electron.onFullscreenChange(setIsFullscreen);
+    }
+    // Non-Electron fallback (dev server in a browser tab).
+    const onFsChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => document.removeEventListener('fullscreenchange', onFsChange);
+  }, []);
 
   const activeUser = users.find(u => u.id === activeUserId);
 
@@ -254,7 +288,10 @@ export default function App() {
     refreshSessions,
     showToast,
     refreshUsers: async () => setUsers(await api.getUsers()),
-    setPage
+    setPage,
+    // Spoiler toggle exposed so Settings can render the switch and
+    // EpisodeTracker can conditionally blur future-episode stills.
+    hideSpoilers, setHideSpoilers,
   };
 
   const pages = {
@@ -285,7 +322,9 @@ export default function App() {
     <AppContext.Provider value={ctx}>
       <PartyWrap showToast={showToast}>
         <div className={`flex flex-col h-screen w-screen bg-bg tv-edge ${isAndroid ? 'tv-mode' : ''}`}>
-          <TopNav page={page} setPage={setPage} searchRef={searchRef} />
+          {!isFullscreen && (
+            <TopNav page={page} setPage={setPage} searchRef={searchRef} />
+          )}
 
           {/* Android update banner */}
           {androidUpdate && (

@@ -17,7 +17,9 @@ class ExtractorError(Exception):
 # Imported AFTER ExtractorError is defined so the submodule can
 # `from . import ExtractorError` without a circular import.
 from . import goojara  # noqa: E402
+from . import daddylive  # noqa: E402
 
 LOCAL = {
     'goojara': goojara,
+    'dlhd': daddylive,
 }

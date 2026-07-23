@@ -318,6 +318,29 @@ class API(object):
         }
         return self._post("/api/episodes/progress", body=payload)
 
+    # ─── Sports ────────────────────────────────────────────────
+
+    def get_sports(self):
+        """
+        GET /api/sports
+
+        Aggregate live/upcoming/final event feed (ESPN + OpenF1 + WEC).
+        Returns a flat list; the Kodi UI filters by status client-side.
+        Cached server-side for 10 min so this is cheap to spam.
+        """
+        return self._get("/api/sports")
+
+    def get_sports_channels(self):
+        """
+        GET /api/sports/dlhd/channels
+
+        Backend-cached DaddyLive 24/7 channel index. Returns
+        [{id, name, ...}, ...]. The route scrapes dlhd.st behind our
+        residential-IP fetcher so the Pi doesn't have to hold cookies
+        or worry about the source domain rotating.
+        """
+        return self._get("/api/sports/dlhd/channels")
+
     # ─── Search ────────────────────────────────────────────────
 
     def search(self, q, type_="multi"):

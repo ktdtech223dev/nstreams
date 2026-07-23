@@ -2,7 +2,7 @@
 <addon
     id="plugin.video.nstreams"
     name="N Streams"
-    version="1.0.5"
+    version="1.0.7"
     provider-name="N Games Crew">
 
     <requires>
@@ -44,6 +44,14 @@
         <website></website>
         <source></source>
         <news>
+v1.0.7 (2026-07-22)
+- Sports section (Home → Sports → Live Now / 24/7 Channels / Upcoming).
+- New Pi-local DaddyLive extractor — direct HLS via inputstream.adaptive,
+  Referer/Origin locks handled, base URL rotation-aware, in-flight
+  dedupe on stream resolve. Live TV skips the /api/sessions/start POST
+  so a synth event id doesn't corrupt the crew watchlist.
+- Spoiler Hider: future episodes get titles/thumbs/plot/rating hidden.
+  Toggle in Settings → Spoilers.
 v1.0.5 (2026-06-18)
 - Pi-local goojara extractor (kodi-addon/lib/extractors/goojara.py).
   Scrapes directly from the Pi's residential IP so Cloudflare's

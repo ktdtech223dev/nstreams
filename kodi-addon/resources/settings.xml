@@ -56,5 +56,14 @@
                 </setting>
             </group>
         </category>
+        <category id="spoilers" label="30050" help="">
+            <group id="1" label="30050">
+                <setting id="hide_spoilers" type="boolean" label="30051" help="30052">
+                    <level>0</level>
+                    <default>true</default>
+                    <control type="toggle"/>
+                </setting>
+            </group>
+        </category>
     </section>
 </settings>

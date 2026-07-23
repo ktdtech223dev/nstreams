@@ -195,7 +195,7 @@ def play(handle, api, content_id, season=None, episode=None,
 
 # ── Pi-local extractor dispatch ────────────────────────────────────────
 
-def _try_local_extract(api, provider, content_id, season, episode):
+def _try_local_extract(api, provider, content_id, season, episode, content=None):
     """Try a Pi-local Python extractor for `provider` before hitting Railway.
 
     Returns the same shape /api/stream returns on success
@@ -204,6 +204,11 @@ def _try_local_extract(api, provider, content_id, season, episode):
     None when no local extractor is registered for this provider OR when
     the extractor crashed with a non-ExtractorError (so the backend
     fallback gets a chance).
+
+    `content` is optional: pass a pre-built dict (with whatever fields
+    the extractor keys off — e.g. channel_id/event_id for dlhd live TV)
+    to skip the api.get_content() lookup. Movie/TV/anime plays leave it
+    None and the normal TMDB-row fetch runs.
     """
     try:
         from lib.extractors import LOCAL, ExtractorError
@@ -214,15 +219,16 @@ def _try_local_extract(api, provider, content_id, season, episode):
     if extractor is None:
         return None
 
-    # The extractor needs the full content row (tmdb_id, title, type,
-    # release_year). api.get_content is cached so this is cheap on
-    # repeat plays.
-    try:
-        content = api.get_content(content_id)
-    except Exception as exc:
-        _log('get_content({0}) for local extract failed: {1}'.format(
-            content_id, exc), xbmc.LOGWARNING)
-        return None
+    if content is None:
+        # The extractor needs the full content row (tmdb_id, title, type,
+        # release_year). api.get_content is cached so this is cheap on
+        # repeat plays.
+        try:
+            content = api.get_content(content_id)
+        except Exception as exc:
+            _log('get_content({0}) for local extract failed: {1}'.format(
+                content_id, exc), xbmc.LOGWARNING)
+            return None
 
     try:
         result = extractor.extract(content, season, episode)
@@ -425,29 +431,47 @@ def _play_native(handle, api, response, content_id, season, episode, provider):
     # Tell the backend the user hit play. Non-blocking: a hang on Railway
     # must NEVER hold up the player. The thread is daemonized so it can't
     # outlive Kodi's main process even if the API never returns.
+    #
+    # LIVE-TV GATE: skip session-start + progress-context entirely for
+    # live sports. play_sports feeds a synth content_id (DL channel id
+    # or event hash) that isn't in the crew catalog — POSTing to
+    # /api/sessions/start with that would upsert against a wrong-content
+    # row via FK coercion and corrupt a real user's watchlist. Same for
+    # the ProgressMonitor context: no matching watchlist row means every
+    # heartbeat would 404 or (worse) update the wrong episode.
+    is_live = bool(response.get('is_live'))
     site_url = response.get('site_url') or response.get('stream_url')
-    _fire_and_forget(
-        'session-start',
-        lambda: api.start_session(content_id, site_url),
-    )
+    if not is_live:
+        _fire_and_forget(
+            'session-start',
+            lambda: api.start_session(content_id, site_url),
+        )
 
-    # Hand the long-running service.py the playback context. Plugin
-    # scripts exit as soon as setResolvedUrl returns, so without this
-    # window-property bridge the ProgressMonitor would have nothing to
-    # heartbeat against. Window 10000 (Home) is the standard cross-script
-    # property bucket — survives until Kodi shuts down.
-    try:
-        import json as _json
-        ctx_blob = _json.dumps({
-            'content_id': content_id,
-            'season': season,
-            'episode': episode,
-            'provider': provider,
-            'site_url': site_url,
-        })
-        xbmcgui.Window(10000).setProperty('nstreams.context', ctx_blob)
-    except Exception:
-        pass
+        # Hand the long-running service.py the playback context. Plugin
+        # scripts exit as soon as setResolvedUrl returns, so without this
+        # window-property bridge the ProgressMonitor would have nothing
+        # to heartbeat against. Window 10000 (Home) is the standard
+        # cross-script property bucket — survives until Kodi shuts down.
+        try:
+            import json as _json
+            ctx_blob = _json.dumps({
+                'content_id': content_id,
+                'season': season,
+                'episode': episode,
+                'provider': provider,
+                'site_url': site_url,
+            })
+            xbmcgui.Window(10000).setProperty('nstreams.context', ctx_blob)
+        except Exception:
+            pass
+    else:
+        # Belt-and-braces: if a previous VOD session left a context on
+        # Window(10000), clear it so the monitor doesn't heartbeat the
+        # wrong content while live TV plays.
+        try:
+            xbmcgui.Window(10000).clearProperty('nstreams.context')
+        except Exception:
+            pass
 
     xbmcplugin.setResolvedUrl(handle, True, listitem)
     _log('resolved native HLS via {0} for content {1} s{2}e{3}'.format(
@@ -473,6 +497,83 @@ def _encode_headers(headers):
     # urlencode percent-encodes both keys and values; inputstream.adaptive
     # decodes them again before issuing the HTTP request.
     return urlencode(cleaned)
+
+
+# ── live sports (DaddyLive) ────────────────────────────────────────────
+
+def play_sports(handle, api, provider='dlhd', event_id=None, channel_id=None,
+                allow_chromium_fallback=False):
+    """Resolve a live sports stream — 24/7 channel or per-event feed.
+
+    There is no TMDB content row for a live game, so we synthesise a
+    minimal `content` dict that carries only what the dlhd extractor
+    keys off (channel_id OR event_id) and hand it to _try_local_extract
+    via its `content=` bypass. On success we drop into the same
+    _play_native path the movie/TV route uses; on failure we notify and
+    resolve to a null item so Kodi releases the spinner.
+
+    The `provider` param is nominally 'dlhd' — kept as a keyword so a
+    future extractor family (SharkLive, etc.) can slot in without a
+    router signature change.
+
+    `allow_chromium_fallback` is accepted for signature parity with
+    play() but not currently consumed: DaddyLive embeds are heavily
+    JS-obfuscated and the anti-devtools shim breaks Kodi's Chromium
+    kiosk anyway, so there's no useful browser fallback for a failed
+    dlhd resolve — we notify the user instead.
+    """
+    if not (event_id or channel_id):
+        _log('play_sports called with no event_id or channel_id',
+             xbmc.LOGERROR)
+        _notify('Missing sports event/channel id',
+                icon=xbmcgui.NOTIFICATION_ERROR)
+        fail(handle)
+        return
+
+    if not provider:
+        provider = 'dlhd'
+
+    # Synthetic row — mirrors the shape a normal content lookup would
+    # return, but with sport-specific fields. The extractor is expected
+    # to prefer channel_id, fall through to event_id, and ignore tmdb_id
+    # when both live-tv fields are set (`type == 'live'`).
+    synth = {
+        'id': event_id or channel_id,
+        'title': 'Live sport',
+        'channel_id': channel_id,
+        'event_id': event_id,
+        'type': 'live',
+    }
+
+    response = _try_local_extract(
+        api, provider,
+        content_id=synth['id'],
+        season=None,
+        episode=None,
+        content=synth,
+    )
+    if response is not None and response.get('ok'):
+        # Reuse _play_native for header propagation, hoster resolution,
+        # subtitle attachment. Mark the response is_live=True so it
+        # skips the session-start POST + ProgressMonitor context bridge —
+        # neither is valid for live TV where the synth content_id has no
+        # matching crew content row, and firing them would corrupt a
+        # real user's watchlist via FK coercion.
+        response.setdefault('title', 'Live sport')
+        response['is_live'] = True
+        _play_native(handle, api, response, synth['id'],
+                     season=None, episode=None, provider=provider)
+        return
+
+    # Local extractor missing, threw ExtractorError, or crashed. There
+    # is no Railway-side dlhd extractor to fall through to — DaddyLive
+    # scraping only works from the residential Pi IP — so this is an
+    # end-of-line.
+    _log('play_sports {0} failed for channel_id={1} event_id={2}'.format(
+        provider, channel_id, event_id), xbmc.LOGWARNING)
+    _notify('Live stream unavailable — try another channel',
+            icon=xbmcgui.NOTIFICATION_ERROR, time_ms=5000)
+    fail(handle)
 
 
 # ── extractor-failure path (Chromium fallback) ─────────────────────────

@@ -319,6 +319,70 @@ def route(argv):
                 return
             playback.play_fallback(handle, site_url, allow_chromium_fallback)
 
+        # ── Sports ─────────────────────────────────────────────
+        # sports_home → sports_live / sports_channels / sports_upcoming.
+        # play_sports resolves via the local dlhd extractor; upcoming
+        # events surface an info dialog instead of trying to play.
+
+        elif action == 'sports_home':
+            ui.build_sports_home(handle, client)
+
+        elif action == 'sports_live':
+            ui.build_sports_live(handle, client)
+
+        elif action == 'sports_channels':
+            ui.build_sports_channels(handle, client)
+
+        elif action == 'sports_upcoming':
+            ui.build_sports_upcoming(handle, client)
+
+        elif action == 'play_sports':
+            provider = _first(params, 'provider') or 'dlhd'
+            event_id = _first(params, 'event_id')
+            channel_id = _first(params, 'channel_id')
+            if not (event_id or channel_id):
+                _notify('Missing sports event or channel id')
+                playback.fail(handle)
+                return
+            playback.play_sports(
+                handle, client,
+                provider=provider,
+                event_id=event_id,
+                channel_id=channel_id,
+                allow_chromium_fallback=allow_chromium_fallback,
+            )
+
+        elif action == 'play_sports_fallback':
+            # No dlhd cross-match for this live event — send the user
+            # into Chromium on the LiveTV/WeakStreams URL the event
+            # feed shipped with. Same flag as VOD fallback: silently
+            # bails if the setting is off, so a Pi that can't run
+            # Chromium doesn't accidentally light one up.
+            site_url = _first(params, 'site_url')
+            if not site_url:
+                _notify('No stream URL attached to this event')
+                playback.fail(handle)
+                return
+            playback.play_fallback(handle, site_url, allow_chromium_fallback)
+
+        elif action == 'sports_upcoming_info':
+            # Upcoming-row click. Just show what time it starts — the
+            # extractor would 404 on a pre-live event and the toast
+            # would look like a bug. A Dialog.ok keeps the user in
+            # the current directory.
+            title = _first(params, 'title') or 'Upcoming event'
+            subtitle = _first(params, 'subtitle') or ''
+            start = _first(params, 'start') or ''
+            lines = []
+            if subtitle:
+                lines.append(subtitle)
+            if start:
+                lines.append('Kickoff: {}'.format(start))
+            if not lines:
+                lines.append('Not yet live — check back at kickoff.')
+            xbmcgui.Dialog().ok(title, '\n'.join(lines))
+            ui.end_empty(handle)
+
         elif action == 'noop':
             # Placeholder rows ('No sources found', 'No results') click
             # to this — just close the directory cleanly.

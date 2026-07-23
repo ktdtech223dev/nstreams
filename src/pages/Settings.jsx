@@ -310,6 +310,8 @@ export default function Settings() {
 
       <AboutSection />
 
+      <SpoilerSection />
+
       {!IS_ANDROID && !IS_PI && <WatchPartySection />}
 
       {!IS_ANDROID && <DnsSection />}
@@ -1254,6 +1256,48 @@ function Section({ title, children }) {
     </section>
   );
 }
+
+function SpoilerSection() {
+  // Reads the toggle straight from AppContext so a single source of truth
+  // drives both this UI and every EpisodeTracker mounted anywhere in the
+  // app. Persistence to localStorage happens in App.jsx.
+  const { hideSpoilers, setHideSpoilers } = useApp();
+  return (
+    <Section title="Spoiler Hider">
+      <p className="text-muted text-sm mb-4">
+        Blur episode thumbnails, hide episode titles, and suppress plot
+        summaries + ratings for any episode past your current one. Applies
+        across every show's episode grid — turn off if you don't mind
+        seeing the next episode's still while you pick where to jump in.
+        Watched episodes and the one you're on stay fully visible.
+      </p>
+      <div className="flex items-center justify-between bg-bg3 border border-border rounded-lg p-3">
+        <div>
+          <div className="text-white font-medium">Hide next-episode spoilers</div>
+          <div className="text-xs text-muted">
+            {hideSpoilers
+              ? '✓ On · future episodes blurred until you click Reveal'
+              : 'Off · all thumbnails, titles, plots and ratings visible'}
+          </div>
+        </div>
+        <button
+          onClick={() => setHideSpoilers(!hideSpoilers)}
+          className={`relative w-12 h-6 rounded-full transition ${
+            hideSpoilers ? 'bg-accent' : 'bg-bg4'
+          }`}
+          aria-pressed={hideSpoilers}
+        >
+          <span
+            className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition-all ${
+              hideSpoilers ? 'left-6' : 'left-0.5'
+            }`}
+          />
+        </button>
+      </div>
+    </Section>
+  );
+}
+
 
 function StatusRow({ label, s }) {
   return (

@@ -91,3 +91,43 @@ msgstr "Playback"
 msgctxt "#30032"
 msgid "Watching as"
 msgstr "Watching as"
+
+# Sports section
+
+msgctxt "#30040"
+msgid "Sports"
+msgstr "Sports"
+
+msgctxt "#30041"
+msgid "Live Now"
+msgstr "Live Now"
+
+msgctxt "#30042"
+msgid "24/7 Channels"
+msgstr "24/7 Channels"
+
+msgctxt "#30043"
+msgid "Upcoming"
+msgstr "Upcoming"
+
+msgctxt "#30044"
+msgid "DaddyLive"
+msgstr "DaddyLive"
+
+msgctxt "#30045"
+msgid "Live sport"
+msgstr "Live sport"
+
+# Spoiler hider
+
+msgctxt "#30050"
+msgid "Spoilers"
+msgstr "Spoilers"
+
+msgctxt "#30051"
+msgid "Hide next-episode spoilers"
+msgstr "Hide next-episode spoilers"
+
+msgctxt "#30052"
+msgid "Blur episode thumbnails, titles, and plots for any episode past your current one. Toggle off to see everything."
+msgstr "Blur episode thumbnails, titles, and plots for any episode past your current one. Toggle off to see everything."

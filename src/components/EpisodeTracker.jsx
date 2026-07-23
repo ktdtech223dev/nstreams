@@ -22,7 +22,11 @@ function fmtTime(sec) {
 const IS_ANDROID = import.meta.env.VITE_PLATFORM === 'android' || (typeof window !== 'undefined' && !!window.Capacitor);
 
 export default function EpisodeTracker({ content, wl, update, onAdvance }) {
-  const { activeUserId, openPlayer, showToast } = useApp();
+  const { activeUserId, openPlayer, showToast, hideSpoilers } = useApp();
+  // Per-card override: user hit the eye icon to reveal one episode's
+  // thumbnail without turning the setting off globally. Not persisted —
+  // resets when the modal closes.
+  const [revealedKeys, setRevealedKeys] = useState(() => new Set());
   const totalSeasons = content.total_seasons || 1;
   const totalEp = content.total_episodes || 0;
   const [season, setSeason] = useState(wl?.current_season || 1);
@@ -296,6 +300,12 @@ export default function EpisodeTracker({ content, wl, update, onAdvance }) {
             const isCurrent = season === currentSeason && ep.episode_number === currentEp;
             const isWatched = season < currentSeason ||
               (season === currentSeason && ep.episode_number < currentEp);
+            // Spoiler gate: strictly-future episodes get blurred +
+            // title/plot suppressed. Never applied to isCurrent (that's
+            // what you're about to watch) or isWatched (you already
+            // saw it). Per-card reveal overrides the global blur.
+            const isFuture = hideSpoilers && !isCurrent && !isWatched &&
+              !revealedKeys.has(key);
             const expanded = expandedKey === key;
             const prog = progressMap[key];
 
@@ -306,6 +316,12 @@ export default function EpisodeTracker({ content, wl, update, onAdvance }) {
                 season={season}
                 isCurrent={isCurrent}
                 isWatched={isWatched}
+                isFuture={isFuture}
+                onReveal={() => setRevealedKeys(prev => {
+                  const next = new Set(prev);
+                  next.add(key);
+                  return next;
+                })}
                 expanded={expanded}
                 prog={prog}
                 sources={sourcesByKey[key]}
@@ -339,7 +355,7 @@ export default function EpisodeTracker({ content, wl, update, onAdvance }) {
   );
 }
 
-function EpisodeCard({ ep, season, isCurrent, isWatched, expanded, prog, sources, onToggle, onPlay, onMarkUpToHere, cardRef }) {
+function EpisodeCard({ ep, season, isCurrent, isWatched, isFuture, onReveal, expanded, prog, sources, onToggle, onPlay, onMarkUpToHere, cardRef }) {
   const last = prog?.last_site_url;
   const lastProv = prog?.last_provider;
 
@@ -372,7 +388,18 @@ function EpisodeCard({ ep, season, isCurrent, isWatched, expanded, prog, sources
         {/* Thumbnail */}
         <div className={`relative shrink-0 rounded-lg overflow-hidden bg-surface-3 ${IS_ANDROID ? 'w-28 h-16' : 'w-40 h-24'}`}>
           {ep.still_path ? (
-            <img src={ep.still_path} alt={ep.name} className="absolute inset-0 w-full h-full object-cover" loading="lazy" />
+            <img
+              src={ep.still_path}
+              alt={isFuture ? `Episode ${ep.episode_number}` : ep.name}
+              className="absolute inset-0 w-full h-full object-cover"
+              loading="lazy"
+              // 24px blur reduces the frame to indistinguishable color
+              // blocks — enough to hide costume changes, character
+              // reveals, and location spoilers while keeping the tile
+              // visually alive. Saturation bump so the blurred mush
+              // reads as intentional design, not a broken image.
+              style={isFuture ? { filter: 'blur(24px) saturate(1.35)' } : undefined}
+            />
           ) : (
             <div className="absolute inset-0 flex items-center justify-center"><Film size={24} className="text-muted" /></div>
           )}
@@ -380,6 +407,16 @@ function EpisodeCard({ ep, season, isCurrent, isWatched, expanded, prog, sources
             <div className="absolute inset-0 bg-black/55 flex items-center justify-center">
               <Check size={24} className="text-green" strokeWidth={3} />
             </div>
+          )}
+          {isFuture && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onReveal?.(); }}
+              className="absolute inset-0 flex items-center justify-center bg-black/25 text-white/85 text-[10px] uppercase tracking-wider font-semibold hover:bg-black/45 hover:text-white transition"
+              title="Reveal this thumbnail"
+            >
+              Spoiler · tap to reveal
+            </button>
           )}
           <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/40 transition">
             <div className="opacity-0 group-hover:opacity-100 transition w-10 h-10 rounded-full bg-white/95 text-black flex items-center justify-center shadow-lg">
@@ -405,12 +442,16 @@ function EpisodeCard({ ep, season, isCurrent, isWatched, expanded, prog, sources
           <div className="flex items-start gap-2 mb-1">
             <div className="flex-1 min-w-0">
               <div className={`font-semibold ${isCurrent ? 'text-accent' : 'text-white'}`}>
-                {ep.episode_number}. {ep.name || `Episode ${ep.episode_number}`}
+                {ep.episode_number}. {isFuture
+                  ? `Episode ${ep.episode_number}`
+                  : (ep.name || `Episode ${ep.episode_number}`)}
               </div>
               <div className="flex items-center gap-3 text-[11px] text-muted mt-0.5 flex-wrap">
                 {ep.runtime > 0 && <span className="flex items-center gap-1"><Clock size={10} />{ep.runtime}m</span>}
                 {ep.air_date && <span className="flex items-center gap-1"><Calendar size={10} />{fmtDate(ep.air_date)}</span>}
-                {ep.rating > 0 && <span className="flex items-center gap-1 text-gold"><Star size={10} fill="currentColor" />{ep.rating.toFixed(1)}</span>}
+                {/* Rating is a spoiler too — a 9.7 on E7 tells you which
+                    episode is "the big one" before you watch it. */}
+                {!isFuture && ep.rating > 0 && <span className="flex items-center gap-1 text-gold"><Star size={10} fill="currentColor" />{ep.rating.toFixed(1)}</span>}
                 {isCurrent && (
                   <span className="bg-accent/25 text-accent px-1.5 py-0.5 rounded uppercase tracking-wider font-bold text-[9px]">
                     Up next
@@ -424,10 +465,11 @@ function EpisodeCard({ ep, season, isCurrent, isWatched, expanded, prog, sources
               </div>
             </div>
           </div>
-          {ep.overview && (
+          {isFuture ? (
+            <p className="text-sm text-muted italic">Spoiler hidden · Settings → Spoiler Hider to disable</p>
+          ) : ep.overview ? (
             <p className="text-sm text-text-dim line-clamp-2 leading-snug">{ep.overview}</p>
-          )}
-          {!ep.overview && (
+          ) : (
             <p className="text-sm text-muted italic">No description available.</p>
           )}
         </div>
