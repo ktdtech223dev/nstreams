@@ -10,6 +10,51 @@
 
 const { ipcRenderer, contextBridge } = require('electron');
 
+// ─── Electron fingerprint scrub ──────────────────────────────
+// The player BrowserView runs with contextIsolation:false + sandbox:false
+// so this preload shares the page's JS realm. That leaks Node/Electron
+// globals (process, require, module, Buffer, global) onto `window` —
+// and `typeof process !== 'undefined'` is THE canonical check anti-
+// scraping scripts use to detect an embedded/automated browser. Sites
+// that fail it don't error; they just never hand the player a source,
+// which is exactly the "infinite spinner, no video.error" symptom.
+//
+// We capture what the preload needs above this line, then delete the
+// globals before any page script gets to run (preload always executes
+// first). `delete` on a non-configurable binding is a no-op, so fall
+// back to redefining as undefined.
+(function scrubElectronFingerprints() {
+  const LEAKED = ['process', 'require', 'module', 'exports', 'Buffer', 'global', 'electron'];
+  for (const key of LEAKED) {
+    try {
+      if (typeof window[key] === 'undefined') continue;
+      delete window[key];
+      if (typeof window[key] !== 'undefined') {
+        Object.defineProperty(window, key, {
+          get: () => undefined,
+          configurable: true,
+        });
+      }
+    } catch { /* locked down already — nothing to leak */ }
+  }
+  // navigator.webdriver should read false, same as a real browser.
+  try {
+    if (navigator.webdriver) {
+      Object.defineProperty(navigator, 'webdriver', {
+        get: () => false,
+        configurable: true,
+      });
+    }
+  } catch {}
+})();
+
+// True only in the outermost frame. Player embeds live in nested
+// iframes and we inject into all of them (nodeIntegrationInSubFrames),
+// so anything that touches shared DOM chrome must gate on this.
+const IS_TOP_FRAME = (() => {
+  try { return window.self === window.top; } catch { return false; }
+})();
+
 let currentVideo = null;
 let syncing = false;               // true while we programmatically control <video>
 let lastHeartbeatTime = 0;
@@ -247,7 +292,13 @@ function scanForDrmFailure() {
 
 // Inject after the page has a body
 function bootEscape() {
-  injectEscapeButton();
+  // Only the outermost frame gets the escape button. This preload is
+  // injected into every nested iframe (nodeIntegrationInSubFrames), and
+  // appending our own node to a player iframe's documentElement can
+  // upset players that measure their container or rewrite the DOM —
+  // producing a stuck spinner with no error. The DRM/error scanners
+  // below still run in every frame, since that's where <video> lives.
+  if (IS_TOP_FRAME) injectEscapeButton();
   setInterval(scanForDrmFailure, 2500);
   // Also listen for video errors from our existing <video> hooks
   setInterval(() => {

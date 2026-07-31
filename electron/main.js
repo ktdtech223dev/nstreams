@@ -582,6 +582,22 @@ ipcMain.handle('player:open', async (_, opts) => {
     playerView.webContents.on('will-navigate', guard);
     playerView.webContents.on('will-redirect', guard);
 
+    // F12 / Ctrl+Shift+I opens DevTools ON THE PLAYER VIEW. Without this
+    // a stuck spinner is undebuggable — the BrowserView has focus, so
+    // the main window's DevTools shortcut never reaches it and you can't
+    // see the console error or the failing network request. Detached so
+    // it doesn't steal layout from the video.
+    playerView.webContents.on('before-input-event', (event, input) => {
+      if (input.type !== 'keyDown') return;
+      const isF12 = input.key === 'F12';
+      const isInspect = input.control && input.shift && input.key.toLowerCase() === 'i';
+      if (!isF12 && !isInspect) return;
+      event.preventDefault();
+      const wc = playerView.webContents;
+      if (wc.isDevToolsOpened()) wc.closeDevTools();
+      else wc.openDevTools({ mode: 'detach' });
+    });
+
     // Surface load failures so the user (and us) know why the spinner
     // is stuck. Top-frame and sub-frame failures both reported.
     function describeError(code) {
@@ -692,6 +708,21 @@ ipcMain.handle('player:reload', () => {
   if (!playerView || !playerState.url) return { ok: false };
   try { playerView.webContents.loadURL(playerState.url); } catch {}
   return { ok: true };
+});
+
+// Toggle DevTools on the player BrowserView. Also bound to F12 /
+// Ctrl+Shift+I inside the view itself — this IPC exists so the
+// renderer can offer a button for remotes/TVs with no keyboard.
+ipcMain.handle('player:devtools', () => {
+  if (!playerView) return { ok: false };
+  try {
+    const wc = playerView.webContents;
+    if (wc.isDevToolsOpened()) { wc.closeDevTools(); return { ok: true, open: false }; }
+    wc.openDevTools({ mode: 'detach' });
+    return { ok: true, open: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
 });
 
 // Reset & Retry — wipes cookies + cache + service workers for the

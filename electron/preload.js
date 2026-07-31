@@ -42,6 +42,7 @@ contextBridge.exposeInMainWorld('electron', {
     close: () => ipcRenderer.invoke('player:close'),
     reload: () => ipcRenderer.invoke('player:reload'),
     resetAndRetry: () => ipcRenderer.invoke('player:reset-and-retry'),
+    devtools: () => ipcRenderer.invoke('player:devtools'),
     setBounds: (bounds) => ipcRenderer.invoke('player:set-bounds', bounds),
     getState: () => ipcRenderer.invoke('player:get-state'),
     onSourceBlocked: (cb) => {

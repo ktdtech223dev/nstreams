@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { ExternalLink, X, Play, RotateCcw, Users, RefreshCw, Wand2 } from 'lucide-react';
+import { ExternalLink, X, Play, RotateCcw, Users, RefreshCw, Wand2, Bug } from 'lucide-react';
 import api from '../api';
 import { useApp } from '../App';
 
@@ -160,6 +160,13 @@ export default function Player({ session, onClose }) {
             title="Reload player (use if an ad redirects you)"
           >
             <RefreshCw size={15} />
+          </button>
+          <button
+            onClick={() => window.electron?.player?.devtools?.()}
+            className="btn btn-icon btn-ghost"
+            title="Open DevTools on the player — shows the real console error and failing network requests when playback hangs. Also F12 while the video area has focus."
+          >
+            <Bug size={15} />
           </button>
           <button
             onClick={exit}
