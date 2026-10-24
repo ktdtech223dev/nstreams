@@ -38,7 +38,11 @@ jobs:
           java-version: '21'
 
       # ── Android SDK ──────────────────────────────────────────────────────────
+      # The action's default package list includes the legacy `tools` package,
+      # which Google removed from the SDK repo — sdkmanager now exits 1 on it.
       - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
 
       # ── Install npm dependencies ─────────────────────────────────────────────
       - name: Install dependencies
