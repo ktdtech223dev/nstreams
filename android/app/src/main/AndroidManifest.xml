@@ -3,6 +3,7 @@
 
     <application
         android:allowBackup="true"
+        android:banner="@drawable/banner"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -20,6 +21,9 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+                <!-- TV launchers (Projectivy, Google TV) list this as a TV app
+                     and show @drawable/banner instead of the square icon. -->
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
 
         </activity>
@@ -48,6 +52,11 @@
             </intent-filter>
         </receiver>
     </application>
+
+    <!-- TV-capable, but NOT TV-only: required="false" keeps phones and the
+         Quest installable (a required feature they lack blocks the install). -->
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
 
     <!-- Permissions -->
 

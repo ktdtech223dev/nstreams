@@ -17,6 +17,11 @@
 
 
     <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
+        <!-- Android < 12: full-screen splash image. -->
         <item name="android:background">@drawable/splash</item>
+        <!-- Android 12+: the system splash is a colour + icon; without these it
+             defaulted to a white screen — a flash in a dark projector room. -->
+        <item name="windowSplashScreenBackground">@color/nstreams_splash_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
     </style>
 </resources>

@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#FFFFFF</color>
+    <color name="ic_launcher_background">#090912</color>
+    <!-- Same as capacitor.config android.backgroundColor, so the launch
+         splash hands off to the WebView without a colour jump. -->
+    <color name="nstreams_splash_background">#070714</color>
 </resources>
