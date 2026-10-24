@@ -362,14 +362,26 @@ function EpisodeCard({ ep, season, isCurrent, isWatched, isFuture, onReveal, exp
   // Build a sane ordering for the sources panel:
   // - Preferred: the user's last source for this episode (if any)
   // - Then: the grouped embed aggregator card (expanded into its variants)
-  // - Then: scraped providers that are specific (Miruro, Anify, FlixHQ...)
+  // - Then: scraped providers that are specific (Miruro, FlixHQ...)
   //         — we treat these as DRM-free primary sources
   // - Then: TMDB/official providers (DRM) as secondary, shown collapsed
   const embedGroup = sources?.find(s => s.is_grouped);
   const embedVariants = embedGroup?.variants || [];
   const otherScrapes = (sources || []).filter(s => !s.is_grouped);
 
-  const drmFree = [...embedVariants, ...otherScrapes];
+  // Rows without a site_url (goojara) are resolved server-side for Kodi
+  // only — there's nothing for this app to open.
+  let drmFree = [...embedVariants, ...otherScrapes].filter(s => s.site_url);
+
+  // Android plays in a Chrome tab, which can't be told Sub vs Dub (see
+  // src/miruroLink.js) — so one Miruro button, and Miruro's own Audio
+  // menu picks (it remembers the choice per show).
+  const audioInPlayer = IS_ANDROID && drmFree.some(s => s.provider === 'miruro');
+  if (audioInPlayer) {
+    drmFree = drmFree
+      .filter(s => !(s.provider === 'miruro' && s.audio === 'dub'))
+      .map(s => (s.provider === 'miruro' ? { ...s, provider_name: 'Miruro' } : s));
+  }
 
   return (
     <div
@@ -549,6 +561,11 @@ function EpisodeCard({ ep, season, isCurrent, isWatched, isFuture, onReveal, exp
             <div className="text-[10px] text-muted mt-2 flex items-center gap-1">
               <Zap size={10} /> Aggregator sites — no account needed, DRM-free
             </div>
+            {audioInPlayer && (
+              <div className="text-[10px] text-muted mt-1">
+                Sub or Dub: pick it in Miruro&apos;s Audio menu — it remembers per show.
+              </div>
+            )}
           </div>
 
           {/* Quick tip */}

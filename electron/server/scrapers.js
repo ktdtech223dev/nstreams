@@ -4,9 +4,9 @@
 // wave that wiped out every hosted scraper API.
 //
 // Three strategies depending on site:
-//   • AniList-ID-based (Miruro, Anify, AllAnime, AniPlay) — resolve the
-//     AniList ID from our DB or via AniList's public GraphQL, then build
-//     the direct URL. Zero scraping.
+//   • AniList-ID-based (Miruro, as separate Sub and Dub rows) — resolve
+//     the AniList entry for the exact season/episode via AniList's public
+//     GraphQL, then build a deep link the player resolves in-browser.
 //   • TMDB-ID-based embed aggregators (VidSrc, Embed.su, 2Embed) —
 //     grouped as a single "Embed Players" card in the UI since users
 //     care that *one* works, not which. No scraping; just URL templates.
@@ -16,6 +16,7 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
 const { getDB } = require('./database');
+const tmdb = require('./tmdb');
 
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
 const HEADERS = { 'User-Agent': UA, 'Accept': 'text/html,application/xhtml+xml' };
@@ -23,11 +24,18 @@ const HEADERS = { 'User-Agent': UA, 'Accept': 'text/html,application/xhtml+xml' 
 // Embed aggregators rotate domains monthly — keep every URL here so
 // rotations are a one-line edit.
 const PROVIDERS = {
-  // AniList-ID anime sites
-  miruro:    (aid)            => `https://www.miruro.tv/watch?id=${aid}`,
-  anify:     (aid)            => `https://anify.eltik.cc/info/${aid}`,
-  allanime:  (aid)            => `https://allanime.to/anime/${aid}`,
-  aniplay:   (aid)            => `https://aniplaynow.live/anime/info/${aid}`,
+  // Miruro keys shows by opaque catalog ids (/watch/<32 chars>?ep=N) that
+  // only its own pages can look up — the catalog API is Cloudflare-gated
+  // against non-browser clients, so the server can't resolve them. We emit
+  // a search URL carrying the AniList id, episode and audio track in the
+  // fragment instead; the desktop player (electron/miruro-link.js) and the
+  // Android app resolve it inside a real browser and preselect the audio.
+  // Anything that can't resolve it still lands on Miruro's search results.
+  // (Anify, AllAnime and AniPlay were removed in v1.3.13: the first two are
+  // dead and aniplaynow.live now redirects to an adult site.)
+  miruro: (aid, { title = '', episode = 1, audio = 'sub' } = {}) =>
+    `https://www.miruro.tv/search?query=${encodeURIComponent(title)}` +
+    `#nstreams-anilist=${aid}&ep=${episode}&audio=${audio}`,
 
   // TMDB-ID movie + TV embed aggregators
   vidsrc:   {
@@ -217,21 +225,168 @@ async function fetchAnilistEpisodes(anilistId, fallbackTotal = null) {
   }
 }
 
-function anilistSiteResults(anilistId, content) {
-  if (!anilistId) return [];
+// ─── TMDB season/episode → AniList entry ────────────────────
+// TMDB files a franchise as one show with seasons; AniList gives every
+// season (often every cour) its own entry, and anime sites key on that
+// entry. So TMDB "S2E3" has to become "<season-2 entry>, episode 3".
+// Relation edges alone can't find it — Edgerunners 2 hangs off season 1
+// as OTHER, not SEQUEL — so we gather the franchise and match each TMDB
+// season's air date to an entry's start date, then follow SEQUEL edges
+// when a TMDB season runs past one entry (split cours).
+const SERIES_FORMATS = new Set(['TV', 'TV_SHORT', 'ONA']);
+const FRANCHISE_RELATIONS = new Set(['SEQUEL', 'PREQUEL', 'OTHER', 'SIDE_STORY', 'PARENT']);
+const FRANCHISE_TTL = 12 * 60 * 60 * 1000;
+const FRANCHISE_CACHE = new Map(); // baseId -> { ts, nodes: Map<id, node> }
+
+function anilistDate(d) {
+  if (!d?.year || !d?.month) return null;
+  return Date.UTC(d.year, d.month - 1, d.day || 1);
+}
+
+async function fetchFranchise(baseId) {
+  const hit = FRANCHISE_CACHE.get(baseId);
+  if (hit && Date.now() - hit.ts < FRANCHISE_TTL) return hit.nodes;
+
+  const query = `
+    query ($ids: [Int]) {
+      Page(perPage: 50) {
+        media(id_in: $ids, type: ANIME) {
+          id format episodes
+          startDate { year month day }
+          title { romaji english }
+          relations { edges { relationType node { id format } } }
+        }
+      }
+    }`;
+  const nodes = new Map();
+  let frontier = [baseId];
+  for (let depth = 0; frontier.length && depth < 8 && nodes.size < 40; depth++) {
+    const res = await axios.post(
+      'https://graphql.anilist.co',
+      { query, variables: { ids: frontier } },
+      { headers: { 'Content-Type': 'application/json' }, timeout: 8000 }
+    );
+    const next = new Set();
+    for (const m of res.data?.data?.Page?.media || []) {
+      const edges = m.relations?.edges || [];
+      nodes.set(m.id, {
+        id: m.id,
+        format: m.format,
+        episodes: m.episodes || null,
+        start: anilistDate(m.startDate),
+        title: m.title?.english || m.title?.romaji || null,
+        sequels: edges
+          .filter(e => e.relationType === 'SEQUEL' && SERIES_FORMATS.has(e.node?.format))
+          .map(e => e.node.id)
+      });
+      for (const e of edges) {
+        const id = e.node?.id;
+        if (id && !nodes.has(id) && FRANCHISE_RELATIONS.has(e.relationType) && SERIES_FORMATS.has(e.node.format)) {
+          next.add(id);
+        }
+      }
+    }
+    frontier = [...next].filter(id => !nodes.has(id));
+  }
+  FRANCHISE_CACHE.set(baseId, { ts: Date.now(), nodes });
+  return nodes;
+}
+
+// Returns { anilistId, episode, title } for a TMDB (season, episode), or
+// the base entry unchanged when there's nothing to map.
+async function resolveAnilistEpisode(content, baseId, season, episode) {
+  const fallback = { anilistId: baseId, episode, title: content.title };
+  let seasons = [];
+  try { seasons = JSON.parse(content.seasons || '[]') || []; } catch {}
+  // MAL/AniList-imported rows have no TMDB seasons: episodes already
+  // number the AniList entry itself.
+  if (!content.tmdb_id || !seasons.length) return fallback;
+
+  let nodes;
+  try { nodes = await fetchFranchise(baseId); } catch { return fallback; }
+  const base = nodes.get(baseId);
+  if (!base) return fallback;
+
+  // 1. The entry the TMDB season starts on: nearest start date within
+  //    ~6 weeks of the season's air date.
+  let entry = null;
+  const airDate = Date.parse(seasons.find(s => s.season_number === season)?.air_date || '');
+  if (Number.isFinite(airDate)) {
+    let best = Infinity;
+    for (const n of nodes.values()) {
+      if (n.start == null) continue;
+      const gap = Math.abs(n.start - airDate);
+      if (gap < best) { best = gap; entry = n; }
+    }
+    if (best > 45 * 24 * 60 * 60 * 1000) entry = null;
+  }
+
+  // 2. No usable date: count absolute episodes along the SEQUEL chain.
+  let ep = episode;
+  if (!entry) {
+    if (season <= 1) {
+      entry = base;
+    } else {
+      entry = base;
+      ep = seasons
+        .filter(s => s.season_number < season)
+        .reduce((n, s) => n + (s.episode_count || 0), 0) + episode;
+    }
+  }
+
+  // 3. Walk into the next cour while the episode overruns this entry.
+  for (let hops = 0; entry.episodes && ep > entry.episodes && hops < 10; hops++) {
+    const next = entry.sequels.map(id => nodes.get(id)).find(Boolean);
+    if (!next) break;
+    ep -= entry.episodes;
+    entry = next;
+  }
+  return { anilistId: entry.id, episode: ep, title: entry.title || content.title };
+}
+
+function anilistSiteResults(target, content) {
+  if (!target?.anilistId) return [];
   const base = {
+    provider: 'miruro',
     title: content.title,
     image: content.poster_path,
     match_score: 100,
     category: 'anime',
-    note: 'AniList ID match'
+    note: target.anilistId === content.anilist_id
+      ? 'AniList ID match'
+      : `AniList ID match · ${target.title} ep ${target.episode}`
   };
+  const link = audio => PROVIDERS.miruro(target.anilistId, { title: target.title, episode: target.episode, audio });
   return [
-    { ...base, provider: 'miruro',   provider_name: 'Miruro',   site_url: PROVIDERS.miruro(anilistId)   },
-    { ...base, provider: 'anify',    provider_name: 'Anify',    site_url: PROVIDERS.anify(anilistId)    },
-    { ...base, provider: 'allanime', provider_name: 'AllAnime', site_url: PROVIDERS.allanime(anilistId) },
-    { ...base, provider: 'aniplay',  provider_name: 'AniPlay',  site_url: PROVIDERS.aniplay(anilistId)  }
+    { ...base, provider_name: 'Miruro · Sub', audio: 'sub', site_url: link('sub') },
+    { ...base, provider_name: 'Miruro · Dub', audio: 'dub', site_url: link('dub') }
   ];
+}
+
+// ─── Anime flag back-fill ───────────────────────────────────
+// Rows added before v1.3.13 were flagged anime only when TMDB linked a
+// MAL id, which missed shows like Edgerunners. Re-check with
+// tmdb.isAnimeTmdb once per process per show, and only for rows already
+// tagged Animation.
+const ANIME_CHECKED = new Set();
+
+async function backfillAnimeFlag(content) {
+  if (content.is_anime === 1 || content.type === 'anime') return true;
+  if (!content.tmdb_id || ANIME_CHECKED.has(content.id)) return false;
+  let genres = [];
+  try { genres = JSON.parse(content.genres || '[]') || []; } catch {}
+  if (!genres.includes('Animation')) return false;
+  ANIME_CHECKED.add(content.id);
+  try {
+    const data = await tmdb.getRaw(content.tmdb_id, content.type === 'movie' ? 'movie' : 'tv', 'external_ids,keywords');
+    if (!tmdb.isAnimeTmdb(data)) return false;
+    getDB().prepare('UPDATE content SET is_anime = 1 WHERE id = ?').run(content.id);
+    content.is_anime = 1;
+    return true;
+  } catch {
+    ANIME_CHECKED.delete(content.id); // transient — try again next time
+    return false;
+  }
 }
 
 // ─── TMDB-ID embed aggregators (movies + TV) ─────────────────
@@ -391,7 +546,7 @@ async function resolveAvailability(contentId, { userId, season, episode } = {}) 
   if (!s) s = 1;
   if (!e || e < 1) e = 1;
 
-  const isAnime = content.is_anime === 1 || content.type === 'anime';
+  const isAnime = await backfillAnimeFlag(content);
   const results = [];
 
   if (isAnime) {
@@ -399,9 +554,14 @@ async function resolveAvailability(contentId, { userId, season, episode } = {}) 
     if (anilistId) {
       if (!content.anilist_id) {
         try { db.prepare('UPDATE content SET anilist_id = ? WHERE id = ?').run(anilistId, contentId); } catch {}
+        content.anilist_id = anilistId;
       }
-      results.push(...anilistSiteResults(anilistId, content));
+      const target = await resolveAnilistEpisode(content, anilistId, s, e);
+      results.push(...anilistSiteResults(target, content));
     }
+    // TMDB-backed anime keeps goojara: it's the only provider Kodi can
+    // play natively, and these shows were non-anime rows until v1.3.13.
+    if (content.tmdb_id) results.push(...goojaraResults(content));
   } else {
     const [flix, sflix] = await Promise.all([
       flixhqResults(content),
@@ -442,5 +602,6 @@ async function resolveAvailability(contentId, { userId, season, episode } = {}) 
 }
 
 module.exports = {
-  resolveAvailability, resolveAnilistId, fetchAnilistEpisodes, similarity, PROVIDERS
+  resolveAvailability, resolveAnilistId, resolveAnilistEpisode, backfillAnimeFlag,
+  fetchAnilistEpisodes, similarity, PROVIDERS
 };

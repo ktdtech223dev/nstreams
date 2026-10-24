@@ -17,6 +17,7 @@ import PartySidebar from './party/PartySidebar';
 import WatchPartyModal from './party/WatchPartyModal';
 import api from './api';
 import { useAndroidUpdater, markPlaybackHandoff } from './useAndroidUpdater';
+import { androidPlayerUrl } from './miruroLink';
 
 // Pi build flag — strips the Watch Party subsystem to save RAM on
 // constrained hardware (Pi 3B+ etc).
@@ -241,11 +242,14 @@ export default function App() {
   const openPlayer = (sessionObj) => {
     // Android / Capacitor — open in the system browser instead of BrowserView
     if (window.Capacitor) {
-      // This handoff backgrounds the app; tell the updater it's playback,
-      // not the user leaving, so it doesn't install over the episode.
-      markPlaybackHandoff();
-      import('@capacitor/browser').then(({ Browser }) => {
-        Browser.open({ url: sessionObj.url });
+      Promise.all([
+        import('@capacitor/browser'),
+        androidPlayerUrl(sessionObj.url)
+      ]).then(([{ Browser }, url]) => {
+        // This handoff backgrounds the app; tell the updater it's playback,
+        // not the user leaving, so it doesn't install over the episode.
+        markPlaybackHandoff();
+        Browser.open({ url });
       });
       return;
     }

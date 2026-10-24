@@ -52,13 +52,34 @@ async function getDetails(tmdbId, type) {
     params: {
       api_key: getKey(),
       language: 'en-US',
-      append_to_response: 'credits,watch/providers,external_ids'
+      append_to_response: 'credits,watch/providers,external_ids,keywords'
     }
   });
   return {
     ...formatDetails(res.data, type),
     providers: formatProviders(res.data['watch/providers'])
   };
+}
+
+// Raw TMDB payload, for callers that need fields formatDetails drops.
+async function getRaw(tmdbId, type, append = '') {
+  const res = await axios.get(`${BASE}/${type}/${tmdbId}`, {
+    params: { api_key: getKey(), language: 'en-US', append_to_response: append }
+  });
+  return res.data;
+}
+
+// TMDB only links a MAL id for some anime (Edgerunners has none), so that
+// alone misses shows. TMDB's own "anime" keyword is the reliable signal;
+// Japanese animation is the backstop.
+const ANIME_KEYWORD_ID = 210024;
+function isAnimeTmdb(data) {
+  if (data.external_ids?.myanimelist_id) return true;
+  const kw = data.keywords?.results || data.keywords?.keywords || [];
+  if (kw.some(k => k.id === ANIME_KEYWORD_ID)) return true;
+  const animated = (data.genres || []).some(g => g.id === 16);
+  const japanese = data.original_language === 'ja' || (data.origin_country || []).includes('JP');
+  return animated && japanese;
 }
 
 function formatProviders(providerData) {
@@ -128,7 +149,7 @@ function formatDetails(data, type) {
         }))
     ),
     mal_id: data.external_ids?.myanimelist_id || null,
-    is_anime: data.external_ids?.myanimelist_id ? 1 : 0
+    is_anime: isAnimeTmdb(data) ? 1 : 0
   };
 }
 
@@ -230,6 +251,6 @@ async function getSeason(tvId, seasonNumber) {
 }
 
 module.exports = {
-  search, getDetails, discoverByProvider, trending, getSeason,
+  search, getDetails, getRaw, isAnimeTmdb, discoverByProvider, trending, getSeason,
   getProviderIdForSite, PROVIDER_MAP, isUsingDefaultKey, DEFAULT_TMDB_KEY
 };

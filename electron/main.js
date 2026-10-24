@@ -37,6 +37,7 @@ const buildFlags = (() => {
 const PI_BUILD = buildFlags.pi || process.env.NSTREAMS_PI === '1';
 const party = PI_BUILD ? require('./party-noop') : require('./party');
 const adblocker = require('./adblocker');
+const miruroLink = require('./miruro-link');
 
 // Lock to a single running instance BEFORE anything else touches the port.
 const singleInstance = app.requestSingleInstanceLock();
@@ -245,7 +246,7 @@ ipcMain.handle('watch-in-app', async (_, { url, title, sessionId, partyId }) => 
     }
   });
 
-  viewer.loadURL(url);
+  miruroLink.loadURL(viewer.webContents, url).catch(() => {});
 
   if (sessionId) viewerWindows.set(String(sessionId), viewer);
 
@@ -526,7 +527,7 @@ ipcMain.handle('player:open', async (_, opts) => {
       // Media source CDNs
       'megacloud.tv', 'megacloud.ru', 'akamaihd.net', 'cloudfront.net',
       // Anime aggregators' known CDN hosts
-      'miruro.tv', 'anify.eltik.cc', 'allanime.to', 'aniplaynow.live',
+      'miruro.tv',
       // FlixHQ / SFlix bundles
       'flixhq.to', 'sflix.to'
     ]);
@@ -666,7 +667,7 @@ ipcMain.handle('player:open', async (_, opts) => {
   if (positionSaveTimer) clearInterval(positionSaveTimer);
   positionSaveTimer = setInterval(() => savePlayerPosition(), 10000);
 
-  await playerView.webContents.loadURL(url);
+  await miruroLink.loadURL(playerView.webContents, url);
 
   watchForCdnBlocks();
 
@@ -706,7 +707,7 @@ ipcMain.handle('player:get-state', () => ({
 
 ipcMain.handle('player:reload', () => {
   if (!playerView || !playerState.url) return { ok: false };
-  try { playerView.webContents.loadURL(playerState.url); } catch {}
+  miruroLink.loadURL(playerView.webContents, playerState.url).catch(() => {});
   return { ok: true };
 });
 
@@ -749,7 +750,7 @@ ipcMain.handle('player:reset-and-retry', async () => {
     });
     await ses.clearCache();
     // Reload
-    playerView.webContents.loadURL(playerState.url);
+    miruroLink.loadURL(playerView.webContents, playerState.url).catch(() => {});
   } catch (e) {
     console.warn('[player] reset failed:', e.message);
   }

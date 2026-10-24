@@ -97,6 +97,10 @@ router.get('/content/:id', async (req, res) => {
       } catch (_) {}
     }
 
+    // Back-fill the anime flag for TMDB rows added before v1.3.13 (they
+    // were only flagged when TMDB linked a MAL id).
+    await scrapers.backfillAnimeFlag(content);
+
     // Back-fill anilist_id for anime (MAL-imported shows typically land
     // in our DB with only mal_id set; this makes scraping + episode
     // metadata resolve on the first modal open).
@@ -379,7 +383,7 @@ const SCRAPE_TTL = 24 * 60 * 60 * 1000;
 
 // GET /api/scrape/availability/:contentId
 // Local resolver — runs in-app per user. Anime uses AniList IDs to
-// build direct URLs on Miruro/Anify. Movies + TV scrape FlixHQ + SFlix
+// build Miruro Sub/Dub deep links. Movies + TV scrape FlixHQ + SFlix
 // search pages. Cached for 1h per content.
 router.get('/scrape/availability/:contentId', async (req, res) => {
   try {
@@ -440,7 +444,10 @@ router.get('/stream/:provider', async (req, res) => {
     const isMovie = content.type === 'movie';
     let fallback_embed_url = null;
     if (provider === 'miruro') {
-      if (content.anilist_id) fallback_embed_url = PROVIDERS.miruro(content.anilist_id);
+      if (content.anilist_id) {
+        const t = await scrapers.resolveAnilistEpisode(content, content.anilist_id, season, episode);
+        fallback_embed_url = PROVIDERS.miruro(t.anilistId, { title: t.title, episode: t.episode });
+      }
     } else if (provider === 'vidsrc' && content.tmdb_id) {
       fallback_embed_url = isMovie
         ? PROVIDERS.vidsrc.movie(content.tmdb_id)
