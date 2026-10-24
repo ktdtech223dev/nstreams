@@ -55,26 +55,66 @@ jobs:
       - name: Capacitor sync
         run: npx cap sync android
 
-      # ── Build debug APK ──────────────────────────────────────────────────────
-      - name: Build debug APK
+      # ── Release signing key ──────────────────────────────────────────────────
+      # Installed copies only accept updates signed by the SAME key, so this
+      # must be the one permanent key — never a per-run debug keystore (which
+      # is what every APK before v1.3.10 was signed with).
+      - name: Restore release keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_B64 }}
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then
+            echo "::error::ANDROID_KEYSTORE_B64 secret missing — refusing to build an APK installed apps can't update to"
+            exit 1
+          fi
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/nstreams-release.jks"
+
+      # ── Build signed release APK ─────────────────────────────────────────────
+      - name: Build release APK
+        env:
+          NSTREAMS_KEYSTORE: ${{ runner.temp }}/nstreams-release.jks
+          NSTREAMS_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          NSTREAMS_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          NSTREAMS_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleRelease --no-daemon
+
+      # ── Guard: signer + ABI ──────────────────────────────────────────────────
+      # A wrong signer would silently strand every installed copy (updates
+      # rejected forever), so fail the build instead. The ABI check protects
+      # 32-bit-only devices like the RK3566 projector (armeabi-v7a only).
+      - name: Verify APK signer and ABIs
+        run: |
+          APK=android/app/build/outputs/apk/release/app-release.apk
+          BT="$ANDROID_HOME/build-tools/$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -1)"
+          "$BT/apksigner" verify --print-certs "$APK" | tee signer.txt
+          GOT=$(grep -m1 'certificate SHA-256 digest' signer.txt | awk '{print $NF}')
+          WANT=$(tr -d '[:space:]' < android/release-cert.sha256)
+          if [ "$GOT" != "$WANT" ]; then
+            echo "::error::APK signer $GOT does not match android/release-cert.sha256 ($WANT)"
+            exit 1
+          fi
+          if unzip -l "$APK" | grep -q 'lib/arm64-v8a/' && ! unzip -l "$APK" | grep -q 'lib/armeabi-v7a/'; then
+            echo "::error::APK ships arm64-only native libs — 32-bit Android devices can't install it"
+            exit 1
+          fi
+          echo "signer + ABI OK"
 
       # ── Upload APK as workflow artifact (every build) ────────────────────────
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: N-Streams-debug.apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: N-Streams-release.apk
+          path: android/app/build/outputs/apk/release/app-release.apk
           retention-days: 30
 
       # ── On version tags: rename APK and attach to GitHub Release ─────────────
       - name: Rename APK for release
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
-          cp android/app/build/outputs/apk/debug/app-debug.apk \
+          cp android/app/build/outputs/apk/release/app-release.apk \
              "N-Streams-${{ github.ref_name }}-android.apk"
 
       - name: Attach APK to GitHub Release

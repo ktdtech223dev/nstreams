@@ -16,6 +16,7 @@ import { PartyProvider } from './party/PartyContext';
 import PartySidebar from './party/PartySidebar';
 import WatchPartyModal from './party/WatchPartyModal';
 import api from './api';
+import { useAndroidUpdater, markPlaybackHandoff } from './useAndroidUpdater';
 
 // Pi build flag — strips the Watch Party subsystem to save RAM on
 // constrained hardware (Pi 3B+ etc).
@@ -34,7 +35,6 @@ export default function App() {
   const [prevPage, setPrevPage] = useState('home');
   const [activeSessions, setActiveSessions] = useState([]);
   const [toast, setToast] = useState(null);
-  const [androidUpdate, setAndroidUpdate] = useState(null);
   // True fullscreen — hides the TopNav-based custom titlebar for the
   // whole window. Wired to main.js `enter-full-screen` / `leave-full-
   // screen` events; ESC exits fullscreen (handled in main.js
@@ -205,14 +205,6 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  // Android self-update check — runs once on mount, silent on failure
-  useEffect(() => {
-    if (!window.Capacitor) return;
-    import('./update-checker.js').then(({ checkForAndroidUpdate }) => {
-      checkForAndroidUpdate().then(info => { if (info) setAndroidUpdate(info); });
-    });
-  }, []);
-
   // Apply TV edge-padding CSS variable from stored preference (Android only)
   useEffect(() => {
     if (!window.Capacitor) return;
@@ -241,9 +233,17 @@ export default function App() {
     setTimeout(() => setToast(null), 3000);
   }
 
+  // Android self-update: download in the background, install silently the
+  // next time the app is backgrounded (or on "Update now"). No-op off Android.
+  const updater = useAndroidUpdater(showToast);
+  const androidUpdate = updater.update;
+
   const openPlayer = (sessionObj) => {
     // Android / Capacitor — open in the system browser instead of BrowserView
     if (window.Capacitor) {
+      // This handoff backgrounds the app; tell the updater it's playback,
+      // not the user leaving, so it doesn't install over the episode.
+      markPlaybackHandoff();
       import('@capacitor/browser').then(({ Browser }) => {
         Browser.open({ url: sessionObj.url });
       });
@@ -292,6 +292,8 @@ export default function App() {
     // Spoiler toggle exposed so Settings can render the switch and
     // EpisodeTracker can conditionally blur future-episode stills.
     hideSpoilers, setHideSpoilers,
+    // Android self-updater, for the Settings "App updates" section.
+    updater,
   };
 
   const pages = {
@@ -326,30 +328,42 @@ export default function App() {
             <TopNav page={page} setPage={setPage} searchRef={searchRef} />
           )}
 
-          {/* Android update banner */}
-          {androidUpdate && (
+          {/* Android update banner — only once there's something to act on.
+              Downloading happens silently; "ready" installs itself on the
+              next background even if this banner is dismissed. */}
+          {androidUpdate && !androidUpdate.hidden && androidUpdate.phase !== 'downloading' && (
             <div
               className="flex items-center justify-between px-4 py-2.5 gap-3"
-              style={{ background: 'var(--accent)', flexShrink: 0 }}
+              style={{
+                background: androidUpdate.phase === 'error' ? 'var(--red, #dc2626)' : 'var(--accent)',
+                flexShrink: 0,
+              }}
             >
               <span className="text-white text-sm font-medium">
-                ⬆ Update available — v{androidUpdate.version}
+                {androidUpdate.phase === 'ready' && (androidUpdate.needsPermission
+                  ? `⬆ v${androidUpdate.version} ready — allow N Streams to install updates`
+                  : `⬆ v${androidUpdate.version} ready — installs automatically when you leave the app`)}
+                {androidUpdate.phase === 'installing' && `Installing v${androidUpdate.version}… N Streams will restart`}
+                {androidUpdate.phase === 'error' && `Update failed: ${androidUpdate.error}`}
               </span>
               <div className="flex gap-2">
-                <button
-                  onClick={() => import('@capacitor/browser').then(({ Browser }) =>
-                    Browser.open({ url: androidUpdate.downloadUrl })
-                  )}
-                  className="bg-white text-accent text-sm font-bold px-4 py-1 rounded-full"
-                >
-                  Install
-                </button>
-                <button
-                  onClick={() => setAndroidUpdate(null)}
-                  className="text-white/70 text-sm px-2"
-                >
-                  ✕
-                </button>
+                {androidUpdate.phase === 'ready' && (
+                  <button
+                    onClick={updater.applyNow}
+                    className="bg-white text-accent text-sm font-bold px-4 py-1 rounded-full"
+                  >
+                    {androidUpdate.needsPermission ? 'Allow' : 'Update now'}
+                  </button>
+                )}
+                {androidUpdate.phase !== 'installing' && (
+                  <button
+                    onClick={updater.dismiss}
+                    className="text-white/70 text-sm px-2"
+                    aria-label="Dismiss"
+                  >
+                    ✕
+                  </button>
+                )}
               </div>
             </div>
           )}

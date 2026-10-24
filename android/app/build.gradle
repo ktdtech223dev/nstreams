@@ -1,14 +1,57 @@
+import groovy.json.JsonSlurper
+
 apply plugin: 'com.android.application'
+
+// Version comes from package.json so the APK, the web bundle (vite reads
+// the same file) and the GitHub release tag can never disagree. versionCode
+// was hardcoded to 1 before, which made every APK claim to be the same
+// version — Android's update path keys off it.
+//   1.3.10 -> 1*1_000_000 + 3*1_000 + 10 = 1003010
+def appVersionName = new JsonSlurper().parse(rootProject.file('../package.json')).version
+def appVersionParts = appVersionName.tokenize('.').collect { (it =~ /^\d+/)[0] as int }
+def appVersionCode = appVersionParts[0] * 1000000 + appVersionParts[1] * 1000 + appVersionParts[2]
+
+// Release signing key. Every APK that should be able to update an
+// installed copy MUST be signed with this same key — Android refuses
+// updates across signers. CI passes it via env (GitHub secrets); local
+// builds read ~/.nstreams-signing/keystore.properties. With neither,
+// release builds come out unsigned and CI's verify step fails loudly.
+def releaseSigning = [:]
+if (System.getenv('NSTREAMS_KEYSTORE')) {
+    releaseSigning = [
+        storeFile    : System.getenv('NSTREAMS_KEYSTORE'),
+        storePassword: System.getenv('NSTREAMS_KEYSTORE_PASSWORD'),
+        keyAlias     : System.getenv('NSTREAMS_KEY_ALIAS'),
+        keyPassword  : System.getenv('NSTREAMS_KEY_PASSWORD'),
+    ]
+} else {
+    def localProps = new File(System.getProperty('user.home'), '.nstreams-signing/keystore.properties')
+    if (localProps.exists()) {
+        def p = new Properties()
+        localProps.withInputStream { p.load(it) }
+        releaseSigning = p
+    }
+}
 
 android {
     namespace = "com.ngames.nstreams"
     compileSdk = rootProject.ext.compileSdkVersion
+    signingConfigs {
+        if (releaseSigning.storeFile) {
+            release {
+                storeFile file(releaseSigning.storeFile)
+                storePassword releaseSigning.storePassword
+                keyAlias releaseSigning.keyAlias
+                keyPassword releaseSigning.keyPassword
+            }
+        }
+    }
     defaultConfig {
         applicationId "com.ngames.nstreams"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode appVersionCode
+        versionName appVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -20,6 +63,9 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (releaseSigning.storeFile) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }

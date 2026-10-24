@@ -9,6 +9,9 @@ const config: CapacitorConfig = {
     backgroundColor: '#070714',
     // Allow the WebView to reach Railway API (HTTPS) and streaming sites
     allowMixedContent: false,
+    // Release builds are no longer debuggable; keep chrome://inspect over
+    // adb working so the projector/Quest WebView stays diagnosable.
+    webContentsDebuggingEnabled: true,
   },
 
   plugins: {

@@ -312,6 +312,8 @@ export default function Settings() {
 
       <SpoilerSection />
 
+      {IS_ANDROID && <AppUpdatesSection />}
+
       {!IS_ANDROID && !IS_PI && <WatchPartySection />}
 
       {!IS_ANDROID && <DnsSection />}
@@ -1256,6 +1258,49 @@ function Section({ title, children }) {
     </section>
   );
 }
+
+function AppUpdatesSection() {
+  const { updater } = useApp();
+  const u = updater?.update;
+  const status =
+    !u ? 'Up to date as of the last check'
+    : u.phase === 'downloading' ? `Downloading v${u.version}… ${u.percent || 0}%`
+    : u.phase === 'ready' ? (u.needsPermission
+        ? `v${u.version} downloaded — needs "Install unknown apps" permission`
+        : `v${u.version} downloaded — installs when you leave the app`)
+    : u.phase === 'installing' ? `Installing v${u.version}…`
+    : `Last check failed: ${u.error}`;
+
+  return (
+    <Section title="App Updates">
+      <p className="text-muted text-sm mb-4">
+        N Streams updates itself: new releases download in the background and
+        install the next time you leave the app — no computer needed.
+      </p>
+      <div className="flex items-center justify-between bg-bg3 border border-border rounded-lg p-3 gap-3">
+        <div>
+          <div className="text-white font-medium">Installed: v{updater?.version || '…'}</div>
+          <div className="text-xs text-muted">{status}</div>
+        </div>
+        <div className="flex gap-2 shrink-0">
+          {u?.phase === 'ready' && (
+            <button onClick={updater.applyNow} className="btn btn-primary">
+              {u.needsPermission ? 'Allow' : 'Update now'}
+            </button>
+          )}
+          <button
+            onClick={updater?.checkNow}
+            disabled={u?.phase === 'downloading' || u?.phase === 'installing'}
+            className="btn btn-ghost"
+          >
+            Check now
+          </button>
+        </div>
+      </div>
+    </Section>
+  );
+}
+
 
 function SpoilerSection() {
   // Reads the toggle straight from AppContext so a single source of truth
