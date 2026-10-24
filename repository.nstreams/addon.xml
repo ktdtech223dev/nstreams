@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<addon
+    id="repository.nstreams"
+    name="N Streams Repository"
+    version="1.0.0"
+    provider-name="N Games Crew">
+
+    <extension point="xbmc.addon.repository" name="N Streams">
+        <dir minversion="21.0.0">
+            <!--
+                Kodi polls these every 24h. Repository content lives on the
+                `repo` branch of the main NStreams repo — github.com serves
+                raw.githubusercontent.com URLs with the right MIME types for
+                XML/zip + handles redirects fine in Kodi 21.
+
+                Bumping the addon version in kodi-addon/addon.xml + tagging
+                a new release auto-regenerates addons.xml on this branch via
+                publish-kodi-repo.yml. End users see the update prompt on
+                their next 24h check.
+            -->
+            <info compressed="false">https://raw.githubusercontent.com/ktdtech223dev/nstreams/repo/addons.xml</info>
+            <checksum>https://raw.githubusercontent.com/ktdtech223dev/nstreams/repo/addons.xml.md5</checksum>
+            <datadir zip="true">https://raw.githubusercontent.com/ktdtech223dev/nstreams/repo/</datadir>
+        </dir>
+    </extension>
+
+    <extension point="xbmc.addon.metadata">
+        <summary lang="en_GB">N Streams add-on repository — auto-updates plugin.video.nstreams</summary>
+        <summary lang="en">N Streams add-on repository — auto-updates plugin.video.nstreams</summary>
+        <description lang="en_GB">Install this once. Kodi will then auto-check for new versions of the N Streams video add-on every 24 hours and prompt you to install updates.</description>
+        <description lang="en">Install this once. Kodi will then auto-check for new versions of the N Streams video add-on every 24 hours and prompt you to install updates.</description>
+        <license>MIT</license>
+        <platform>all</platform>
+    </extension>
+</addon>
